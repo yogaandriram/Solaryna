@@ -22,6 +22,15 @@ export class WalletRegistry {
     return this.#wallets.get(address);
   }
 
+  findById(id: number): TrackedWalletInfo | undefined {
+    for (const wallet of this.#wallets.values()) {
+      if (wallet.id === id) {
+        return wallet;
+      }
+    }
+    return undefined;
+  }
+
   /** Sorted, so it can be compared and diffed. */
   addresses(): string[] {
     return [...this.#wallets.keys()].sort();

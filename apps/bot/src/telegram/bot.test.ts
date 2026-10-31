@@ -2,8 +2,10 @@ import { Secret } from '@solaryna/config';
 import type { Update, UserFromGetMe } from 'grammy/types';
 import { pino } from 'pino';
 import { describe, expect, it, vi } from 'vitest';
-import { createTelegramBot } from './bot';
+import { createFakeTradingStore } from '../engine/fake-store';
+import { BOT_COMMANDS, createTelegramBot } from './bot';
 import type { WalletCommandDeps } from './commands';
+import type { TradingCommandDeps } from './trading-commands';
 
 const ALLOWED_CHAT = 111;
 const WALLET = 'J8M2wM8vtBLZJfajpczrjbs78PWhW1sqVFVJdE5d43jX';
@@ -47,10 +49,24 @@ function setup(overrides: Partial<WalletCommandDeps> = {}) {
     logger: pino({ level: 'silent' }),
     ...overrides,
   };
+  const store = createFakeTradingStore();
+  const notifyOthers = vi.fn<TradingCommandDeps['notifyOthers']>();
+  const trading: TradingCommandDeps = {
+    mode: 'paper',
+    store,
+    monitor: { valuation: () => undefined },
+    resolveTokenLabel: () => Promise.resolve({ symbol: null, name: null }),
+    walletLabel: () => null,
+    loadReport: (kind) => Promise.resolve(kind === 'week' ? ['part 1', 'part 2'] : ['today']),
+    notifyOthers,
+    timeZone: 'Asia/Jakarta',
+    now: () => new Date('2026-10-31T05:00:00Z'),
+  };
   const bot = createTelegramBot({
     token: new Secret('123456:test-token'),
     allowedChatIds: [ALLOWED_CHAT],
     commands,
+    trading,
     logger: pino({ level: 'silent' }),
   });
   bot.botInfo = botInfo;
@@ -60,7 +76,7 @@ function setup(overrides: Partial<WalletCommandDeps> = {}) {
     calls.push({ method, payload });
     return Promise.resolve({ ok: true, result: true } as never);
   });
-  return { bot, addWallet, calls };
+  return { bot, addWallet, calls, store, notifyOthers };
 }
 
 describe('createTelegramBot', () => {
@@ -90,5 +106,33 @@ describe('createTelegramBot', () => {
     expect(calls).toHaveLength(1);
     expect(String(calls[0]?.payload.text)).toContain('Terjadi kesalahan');
     expect(String(calls[0]?.payload.text)).not.toContain('db down');
+  });
+
+  it('ignores trading commands from chats that are not allowed', async () => {
+    const { bot, calls, store } = setup();
+    await bot.handleUpdate(commandUpdate(999, '/pause'));
+    expect(await store.isTradingPaused()).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('pauses trading from an allowed chat with the chat and user as audit actor', async () => {
+    const { bot, calls, store, notifyOthers } = setup();
+    await bot.handleUpdate(commandUpdate(ALLOWED_CHAT, '/pause'));
+    expect(await store.isTradingPaused()).toBe(true);
+    expect(store.audit).toEqual([{ actor: 'telegram:111:7', action: 'trading.pause' }]);
+    expect(notifyOthers.mock.calls[0]?.[1]).toBe(ALLOWED_CHAT);
+    expect(String(calls[0]?.payload.text)).toContain('dijeda');
+  });
+
+  it('sends a long report as several messages', async () => {
+    const { bot, calls } = setup();
+    await bot.handleUpdate(commandUpdate(ALLOWED_CHAT, '/report minggu'));
+    expect(calls.map((call) => call.payload.text)).toEqual(['part 1', 'part 2']);
+  });
+
+  it('registers the trading commands in the command menu', () => {
+    expect(BOT_COMMANDS.map((c) => c.command)).toEqual(
+      expect.arrayContaining(['status', 'positions', 'pause', 'resume', 'report']),
+    );
   });
 });

@@ -11,22 +11,41 @@ import {
   type WalletCommandDeps,
 } from './commands';
 import { HTML_MESSAGE_OPTIONS } from './notifier';
+import {
+  REPORT_USAGE,
+  handlePause,
+  handlePositions,
+  handleReport,
+  handleResume,
+  handleStatus,
+  type TradingCommandDeps,
+} from './trading-commands';
 
 export const BOT_COMMANDS = [
   { command: 'list', description: 'Daftar wallet incaran aktif' },
   { command: 'addwallet', description: 'Tambah wallet incaran: /addwallet <alamat> [label]' },
   { command: 'removewallet', description: 'Berhenti memantau wallet: /removewallet <alamat>' },
+  { command: 'status', description: 'Mode, status jeda, posisi terbuka, PnL hari ini' },
+  { command: 'positions', description: 'Posisi terbuka dan estimasi PnL' },
+  { command: 'report', description: 'Laporan hari ini; /report minggu untuk minggu ini' },
+  { command: 'pause', description: 'Jeda trading (kill switch)' },
+  { command: 'resume', description: 'Lanjutkan trading' },
   { command: 'help', description: 'Bantuan' },
 ] as const;
 
 const HELP_TEXT = [
-  '<b>Solaryna</b> memantau wallet incaran dan mengirim alert saat mereka beli/jual.',
+  '<b>Solaryna</b> memantau wallet incaran, mengirim alert saat mereka beli/jual, dan',
+  'menyimulasikan hasilnya jika diikuti (paper trading).',
   '',
   '/list — daftar wallet incaran aktif',
   `/addwallet — tambah wallet. ${ADD_WALLET_USAGE}`,
   `/removewallet — berhenti memantau. ${REMOVE_WALLET_USAGE}`,
+  '/status — mode, status jeda, posisi terbuka, PnL hari ini',
+  '/positions — posisi terbuka dan estimasi PnL',
+  `/report — laporan PnL. ${REPORT_USAGE}`,
+  '/pause, /resume — jeda atau lanjutkan trading (kill switch)',
   '',
-  'Alert ini informasi transaksi on-chain, bukan saran investasi.',
+  'Alert dan laporan ini informasi transaksi on-chain dan hasil simulasi, bukan saran investasi.',
 ].join('\n');
 
 /** Audit actor for a command, e.g. "telegram:-1001234:5678". */
@@ -35,16 +54,17 @@ export function telegramActor(ctx: Context): string {
 }
 
 /**
- * Bot with the M1 commands. Updates from chats outside TELEGRAM_ALLOWED_CHAT_IDS are dropped
+ * Bot with the wallet and trading commands. Updates from chats outside TELEGRAM_ALLOWED_CHAT_IDS are dropped
  * silently, before any handler runs.
  */
 export function createTelegramBot(options: {
   token: Secret;
   allowedChatIds: readonly number[];
   commands: WalletCommandDeps;
+  trading: TradingCommandDeps;
   logger: Logger;
 }): Bot {
-  const { commands, logger } = options;
+  const { commands, trading, logger } = options;
   const bot = new Bot(options.token.reveal());
   bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 60 }));
 
@@ -73,6 +93,20 @@ export function createTelegramBot(options: {
   handlers.command('removewallet', async (ctx) =>
     reply(ctx, await handleRemoveWallet(commands, ctx.match, telegramActor(ctx))),
   );
+
+  handlers.command('status', async (ctx) => reply(ctx, await handleStatus(trading)));
+  handlers.command('positions', async (ctx) => reply(ctx, await handlePositions(trading)));
+  handlers.command('pause', async (ctx) =>
+    reply(ctx, await handlePause(trading, telegramActor(ctx), ctx.chat.id)),
+  );
+  handlers.command('resume', async (ctx) =>
+    reply(ctx, await handleResume(trading, telegramActor(ctx), ctx.chat.id)),
+  );
+  handlers.command('report', async (ctx) => {
+    for (const part of await handleReport(trading, ctx.match)) {
+      await reply(ctx, part);
+    }
+  });
 
   bot.catch(({ error, ctx }) => {
     logger.error({ err: error, updateId: ctx.update.update_id }, 'Unhandled Telegram update error');

@@ -29,6 +29,7 @@ import { BOT_COMMANDS, createTelegramBot } from './telegram/bot';
 import { formatStartupMessage, formatSwapAlert } from './telegram/format';
 import { createTelegramNotifier } from './telegram/notifier';
 import { createTokenInfoResolver } from './tokens/token-info';
+import { createDbTradingStore } from './engine/store';
 import { WalletRegistry } from './wallets/registry';
 
 // Becomes true in M5, once the Jupiter live executor exists and is tested with mocks.
@@ -98,6 +99,7 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
     logger,
   });
 
+  const tradingStore = createDbTradingStore(db);
   const bot = createTelegramBot({
     token: config.telegram.botToken,
     allowedChatIds: config.telegram.allowedChatIds,
@@ -107,6 +109,18 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
       listWallets: () => listActiveWallets(db),
       syncWallets: () => walletSync.syncNow(),
       logger,
+    },
+    trading: {
+      mode: trading.mode,
+      store: tradingStore,
+      // Replaced by the position monitor and the report job when paper trading is wired in.
+      monitor: { valuation: () => undefined },
+      resolveTokenLabel,
+      walletLabel: (id) => (id === null ? null : (registry.findById(id)?.label ?? null)),
+      loadReport: () => Promise.resolve(['Laporan belum tersedia.']),
+      notifyOthers: (html, excludeChatId) => notifier.notify(html, { excludeChatId }),
+      timeZone: config.displayTimeZone,
+      now: () => new Date(),
     },
     logger,
   });
