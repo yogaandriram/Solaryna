@@ -17,7 +17,7 @@ import Link from 'next/link';
 import { Card } from '../../components/card';
 import { DailyPnlChart } from '../../components/daily-pnl-chart';
 import { EmptyState } from '../../components/empty-state';
-import { OpenPositionsTable } from '../../components/open-positions-table';
+import { OpenPositionsTable } from '../../components/position-tables';
 import { PageHeading } from '../../components/page-heading';
 import { PauseToggle } from '../../components/pause-toggle';
 import { Pnl } from '../../components/pnl';

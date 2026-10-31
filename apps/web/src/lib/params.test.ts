@@ -5,6 +5,7 @@ import {
   parseId,
   parseMode,
   parsePage,
+  parsePositionsTab,
   parseSignalFilter,
   splitPage,
   withParams,
@@ -79,5 +80,14 @@ describe('withParams', () => {
     );
     expect(withParams('/', {})).toBe('/');
     expect(withParams('/posisi', { q: 'a b&c' })).toBe('/posisi?q=a+b%26c');
+  });
+});
+
+describe('parsePositionsTab', () => {
+  it('defaults to the open tab', () => {
+    expect(parsePositionsTab('closed')).toBe('closed');
+    expect(parsePositionsTab('trades')).toBe('trades');
+    expect(parsePositionsTab('x')).toBe('open');
+    expect(parsePositionsTab(undefined)).toBe('open');
   });
 });

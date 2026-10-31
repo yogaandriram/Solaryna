@@ -67,6 +67,13 @@ export function formatUsd(value: string | Decimal | null): string {
   return `$${formatDecimal(amount, options)}`;
 }
 
+/** SOL per whole token with 4 significant digits ("0,00001235 SOL"); "—" when unknown. */
+export function formatPriceSol(value: string | null): string {
+  return value === null
+    ? '—'
+    : `${formatDecimal(new Decimal(value), { maximumSignificantDigits: 4 })} SOL`;
+}
+
 export const formatTokenAmount = (raw: bigint, decimals: number): string =>
   formatAmount(raw, decimals, 2);
 

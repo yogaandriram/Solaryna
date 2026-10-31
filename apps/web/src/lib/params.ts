@@ -46,6 +46,13 @@ export function parseSignalFilter(params: SearchParams): SignalFilter {
   return filter;
 }
 
+export type PositionsTab = 'open' | 'closed' | 'trades';
+
+export function parsePositionsTab(value: unknown): PositionsTab {
+  const tab = first(value);
+  return tab === 'closed' || tab === 'trades' ? tab : 'open';
+}
+
 /** Fetches one row more than a page so the page can tell whether a next one exists. */
 export const pageToOffset = (page: number): Page => ({
   limit: PAGE_SIZE + 1,

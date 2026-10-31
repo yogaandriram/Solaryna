@@ -5,6 +5,7 @@ import {
   formatDayKey,
   formatDuration,
   formatPct,
+  formatPriceSol,
   formatQuoteAmount,
   formatSignedSol,
   formatSol,
@@ -74,6 +75,14 @@ describe('other amounts', () => {
     expect(formatQuoteAmount(500_000_000n, 9, WSOL_MINT)).toBe('0,5 SOL');
     expect(formatQuoteAmount(12_500_000n, 6, USDC_MINT)).toBe('12,5 USDC');
     expect(formatQuoteAmount(3_000_000n, 6, MINT)).toBe('3 J8M2…43jX');
+  });
+});
+
+describe('prices', () => {
+  it('formats SOL per token with 4 significant digits', () => {
+    expect(formatPriceSol('0.0000123456')).toBe('0,00001235 SOL');
+    expect(formatPriceSol('1.5')).toBe('1,5 SOL');
+    expect(formatPriceSol(null)).toBe('—');
   });
 });
 
