@@ -13,7 +13,7 @@ Sistem punya dua alur:
 2. **Copy trade real-time (terus-menerus)**
    Wallet incaran swap → Helius webhook → normalisasi jadi `SwapEvent` → mesin aturan risiko → mode **paper** (simulasi) atau **live** (swap via Jupiter) → notifikasi Telegram + catat ke database → tampil di dashboard.
 
-**Status:** M0 (scaffold) selesai; M1 (ingest + alert) kodenya selesai, menunggu uji integrasi database dan uji end-to-end oleh pengguna. Bangun bertahap mengikuti bagian **Milestone**. Jangan loncat ke mode live sebelum milestone paper trading selesai dan teruji.
+**Status:** M0 (scaffold) dan M1 (ingest + alert) selesai; berikutnya M2 (paper trading). Bangun bertahap mengikuti bagian **Milestone**. Jangan loncat ke mode live sebelum milestone paper trading selesai dan teruji.
 
 ## Bahasa
 
@@ -272,7 +272,7 @@ Skor akhir = kombinasi berbobot metrik di atas; dokumentasikan rumusnya di `pack
 ## Milestone
 
 - [x] **M0 — Scaffold:** npm workspaces, TS config, ESLint/Prettier, vitest, `packages/config` (zod env), `packages/db` + migrasi awal, `.gitignore`, `.env.example`, README singkat.
-- [ ] **M1 — Ingest + alert:** webhook Helius (dan sumber websocket untuk dev), parser `SwapEvent` + fixture test, daftar wallet manual (impor dari GMGN secara manual), alert Telegram, perintah `/addwallet` `/removewallet` `/list`.
+- [x] **M1 — Ingest + alert:** webhook Helius (dan sumber websocket untuk dev), parser `SwapEvent` + fixture test, daftar wallet manual (impor dari GMGN secara manual), alert Telegram, perintah `/addwallet` `/removewallet` `/list`.
 - [ ] **M2 — Paper trading:** mesin risiko, executor paper dengan quote Jupiter, posisi & exits, laporan PnL harian di Telegram, kill switch.
 - [ ] **M3 — Dashboard:** login, ringkasan, wallet, sinyal, posisi, pengaturan.
 - [ ] **M4 — Penemuan wallet:** backfill histori, metrik & penanda curang, rescoring harian, umpan balik copyability dari paper trading.
