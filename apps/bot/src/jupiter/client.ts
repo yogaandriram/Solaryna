@@ -97,7 +97,11 @@ const orderSchema = z
     slippageBps: z.number().int(),
     feeBps: z.number().optional(),
     platformFee: z
-      .object({ amount: rawAmount, feeBps: z.number().optional(), feeMint: z.string() })
+      .object({
+        amount: rawAmount.optional(),
+        feeBps: z.number().optional(),
+        feeMint: z.string().optional(),
+      })
       .nullish(),
     inUsdValue: nullableNumber,
     outUsdValue: nullableNumber,
@@ -128,6 +132,32 @@ const tokenSchema = z.object({
 });
 
 const errorBodySchema = z.object({ error: z.string() });
+
+/**
+ * The platform fee of an order. Jupiter may leave out its amount (seen 2026-10-31); it then
+ * deducts `feeBps` from the output, so `outAmount` is net of the fee and the fee in the output
+ * mint is outAmount × bps / (10000 − bps), whatever `feeMint` says.
+ */
+function platformFeeOf(
+  order: z.infer<typeof orderSchema>,
+  outputMint: string,
+): JupiterOrder['platformFee'] {
+  const fee = order.platformFee;
+  if (fee === null || fee === undefined) {
+    return null;
+  }
+  if (fee.amount !== undefined && fee.feeMint !== undefined) {
+    return { amountRaw: BigInt(fee.amount), mint: fee.feeMint };
+  }
+  const bps = fee.feeBps ?? order.feeBps;
+  if (bps === undefined || !Number.isInteger(bps) || bps <= 0 || bps >= 10_000) {
+    return null;
+  }
+  return {
+    amountRaw: (BigInt(order.outAmount) * BigInt(bps)) / BigInt(10_000 - bps),
+    mint: outputMint,
+  };
+}
 
 const toDecimal = (value: number | null | undefined) =>
   value === null || value === undefined ? null : new Decimal(value);
@@ -244,10 +274,7 @@ export function createJupiterClient(options: JupiterClientOptions): JupiterClien
             : new Decimal(order.priceImpactPct ?? '0').mul(100),
         slippageBps: order.slippageBps,
         feeBps: order.feeBps ?? 0,
-        platformFee:
-          order.platformFee === null || order.platformFee === undefined
-            ? null
-            : { amountRaw: BigInt(order.platformFee.amount), mint: order.platformFee.feeMint },
+        platformFee: platformFeeOf(order, params.outputMint),
         inUsdValue: toDecimal(order.inUsdValue),
         outUsdValue: toDecimal(order.outUsdValue),
         router: order.router ?? order.swapType ?? 'unknown',

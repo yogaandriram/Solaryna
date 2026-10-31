@@ -104,6 +104,36 @@ describe('createJupiterClient.getOrder', () => {
     expect(order?.snapshot).toEqual(orderBody);
   });
 
+  // Real responses (2026-10-31): `platformFee` has no `amount`, and the fee is deducted from the
+  // output (route output − outAmount = outAmount × feeBps / (10000 − feeBps)), even on a buy
+  // where `feeMint` names the input.
+  it('estimates the platform fee on the output side when Jupiter omits its amount', async () => {
+    const withoutAmount = { feeBps: 10, feeMint: WSOL_MINT };
+    const buy = setup(() =>
+      json({ ...orderBody, outAmount: '450204846', platformFee: withoutAmount }),
+    );
+    expect((await buy.client.getOrder(orderParams, 'buy'))?.platformFee).toEqual({
+      amountRaw: 450_655n,
+      mint: MINT,
+    });
+
+    const sell = setup(() =>
+      json({
+        ...orderBody,
+        inputMint: MINT,
+        outputMint: WSOL_MINT,
+        inAmount: '452916641',
+        outAmount: '49898432',
+        platformFee: withoutAmount,
+      }),
+    );
+    const sellParams = { ...orderParams, inputMint: MINT, outputMint: WSOL_MINT };
+    expect((await sell.client.getOrder(sellParams, 'exit'))?.platformFee).toEqual({
+      amountRaw: 49_948n,
+      mint: WSOL_MINT,
+    });
+  });
+
   it('passes an expiry to the limiter', async () => {
     const { client, expiries } = setup((url) =>
       url.includes('/tokens/') ? json([]) : json(orderBody),
