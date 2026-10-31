@@ -1,10 +1,18 @@
 import type { RiskLimits } from '@solaryna/config';
 import { BASE_NETWORK_FEE_LAMPORTS, evaluateExit, remainingCostLamports } from '@solaryna/core';
+import type { PositionRow } from '@solaryna/db';
 import type { Logger } from 'pino';
 import type { KeyedMutex } from '../engine/locks';
 import { positionState, recordSale, type TradingEvents } from '../engine/sell';
 import type { TradingStore } from '../engine/store';
-import type { Executor, TradeFill } from '../executor/types';
+import type { Executor, PrepareResult, TradeFill } from '../executor/types';
+import { JupiterApiError } from '../jupiter/client';
+
+/**
+ * Consecutive client errors (HTTP 4xx other than 429) after which a token counts as having no
+ * route: Jupiter rejecting a rugged token with a message we do not recognize as "no route".
+ */
+export const UNROUTABLE_AFTER_CLIENT_ERRORS = 10;
 
 export interface Valuation {
   positionId: number;
@@ -34,29 +42,71 @@ export interface PositionMonitorDeps {
   intervalMs?: number;
 }
 
+type Quote =
+  { position: PositionRow; prepared: PrepareResult } | { position: PositionRow; error: unknown };
+
+const isClientError = (error: unknown) =>
+  error instanceof JupiterApiError &&
+  error.status !== null &&
+  error.status >= 400 &&
+  error.status < 500 &&
+  error.status !== 429;
+
 /**
  * Every 30 s: quotes a sale of each open position's remainder (monitor priority) and exits on
- * take-profit, stop-loss or max hold with that same quote. A position without a route past max
- * hold is closed at value 0 (`unsellable`). While paused, exits wait for /resume.
+ * take-profit, stop-loss or max hold with that same quote. All positions are quoted at once and
+ * without a lock, so a busy rate limiter delays them together and never blocks a follow-sell;
+ * each one is then re-read under its token lock and its quote dropped if the position changed.
+ * A position without a route past max hold is closed at value 0 (`unsellable`). While paused,
+ * exits wait for /resume.
  */
 export function createPositionMonitor(deps: PositionMonitorDeps): PositionMonitor {
   const { store, executor, limits } = deps;
   const mode = executor.mode;
   const valuations = new Map<number, Valuation>();
+  const clientErrors = new Map<number, number>();
   let running: Promise<void> | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
 
-  async function check(positionId: number): Promise<void> {
+  async function quote(position: PositionRow): Promise<Quote> {
+    try {
+      const prepared = await executor.prepareSell(
+        { tokenMint: position.tokenMint, tokenAmountRaw: position.tokenAmountRaw },
+        'monitor',
+      );
+      return { position, prepared };
+    } catch (error) {
+      return { position, error };
+    }
+  }
+
+  async function check(quoted: Quote): Promise<void> {
+    const positionId = quoted.position.id;
     const position = await store.getPosition(positionId);
     if (position?.status !== 'open') {
       valuations.delete(positionId);
+      clientErrors.delete(positionId);
       return;
     }
+    if (position.tokenAmountRaw !== quoted.position.tokenAmountRaw) {
+      // Sold while it was quoted: the quote is for another amount. Next cycle quotes again.
+      return;
+    }
+
+    let prepared: PrepareResult;
+    if ('error' in quoted) {
+      const count = isClientError(quoted.error) ? (clientErrors.get(positionId) ?? 0) + 1 : 0;
+      clientErrors.set(positionId, count);
+      if (count < UNROUTABLE_AFTER_CLIENT_ERRORS) {
+        throw quoted.error;
+      }
+      prepared = { ok: false, reason: 'no_route' };
+    } else {
+      clientErrors.delete(positionId);
+      prepared = quoted.prepared;
+    }
+
     const remainingCost = remainingCostLamports(positionState(position));
-    const prepared = await executor.prepareSell(
-      { tokenMint: position.tokenMint, tokenAmountRaw: position.tokenAmountRaw },
-      'monitor',
-    );
     const now = deps.now();
     // The DEX fee is already deducted in outAmount; only the per-transaction fees remain.
     const netValue = prepared.ok
@@ -113,6 +163,7 @@ export function createPositionMonitor(deps: PositionMonitorDeps): PositionMonito
         { position, fill, reason: trigger, signal: null, walletEvent: null },
       );
       valuations.delete(positionId);
+      clientErrors.delete(positionId);
       deps.logger.info({ positionId, trigger }, 'Position exited');
     } catch (error) {
       const message = (error instanceof Error ? error.message : String(error)).slice(0, 300);
@@ -124,16 +175,19 @@ export function createPositionMonitor(deps: PositionMonitorDeps): PositionMonito
   async function runCycle(): Promise<void> {
     const open = await store.listOpenPositions(mode);
     const openIds = new Set(open.map((p) => p.id));
-    for (const id of valuations.keys()) {
-      if (!openIds.has(id)) {
-        valuations.delete(id);
+    for (const tracked of [valuations, clientErrors]) {
+      for (const id of tracked.keys()) {
+        if (!openIds.has(id)) {
+          tracked.delete(id);
+        }
       }
     }
-    for (const position of open) {
+    const quotes = await Promise.all(open.map(quote));
+    for (const quoted of quotes) {
       try {
-        await deps.locks.run(position.tokenMint, () => check(position.id));
+        await deps.locks.run(quoted.position.tokenMint, () => check(quoted));
       } catch (error) {
-        deps.logger.warn({ err: error, positionId: position.id }, 'Position check failed');
+        deps.logger.warn({ err: error, positionId: quoted.position.id }, 'Position check failed');
       }
     }
   }

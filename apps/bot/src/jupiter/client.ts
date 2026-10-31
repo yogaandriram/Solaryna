@@ -1,7 +1,12 @@
 import type { Secret } from '@solaryna/config';
 import { Decimal, type TokenMarketData } from '@solaryna/core';
 import { z } from 'zod';
-import type { RateLimiter, RequestPriority, ScheduleOptions } from './rate-limiter';
+import {
+  RequestExpiredError,
+  type RateLimiter,
+  type RequestPriority,
+  type ScheduleOptions,
+} from './rate-limiter';
 
 // Jupiter Swap API v2 (quote only: no `taker`, so no transaction is built) and Tokens API v2.
 // Checked against developers.jup.ag on 2026-10-31: header `x-api-key`; `priceImpact` is in
@@ -69,6 +74,8 @@ export interface JupiterClientOptions {
 
 /** Retries after a 429, each through the limiter again. */
 const MAX_RATE_LIMIT_RETRIES = 2;
+const MIN_RATE_LIMIT_PAUSE_MS = 1000;
+const MAX_RATE_LIMIT_PAUSE_MS = 60_000;
 
 /**
  * The no-route response is undocumented; without a `taker` Jupiter answers 400 with a message.
@@ -159,6 +166,10 @@ export function createJupiterClient(options: JupiterClientOptions): JupiterClien
           scheduleOptions,
         );
       } catch (error) {
+        // Dropped by the limiter before it was sent: the caller treats this as a stale signal.
+        if (error instanceof RequestExpiredError) {
+          throw error;
+        }
         const detail =
           error instanceof Error && error.name === 'TimeoutError'
             ? `timed out after ${timeoutMs} ms`
@@ -167,9 +178,13 @@ export function createJupiterClient(options: JupiterClientOptions): JupiterClien
       }
 
       if (response.status === 429) {
-        const reset = Number(response.headers.get('x-ratelimit-reset'));
+        // Unix seconds per the docs; clamped so clock skew or a bad header cannot stall exits.
+        const reset = Number(response.headers.get('x-ratelimit-reset')) * 1000;
+        const at = now();
         options.limiter.pauseUntil(
-          Number.isFinite(reset) && reset > 0 ? reset * 1000 : now() + 1000,
+          Number.isFinite(reset)
+            ? Math.min(Math.max(reset, at + MIN_RATE_LIMIT_PAUSE_MS), at + MAX_RATE_LIMIT_PAUSE_MS)
+            : at + MIN_RATE_LIMIT_PAUSE_MS,
         );
         if (attempt < MAX_RATE_LIMIT_RETRIES) {
           continue;

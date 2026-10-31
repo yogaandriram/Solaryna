@@ -376,4 +376,37 @@ describe('engine: follow-sell', () => {
     ]);
     expect(store.trades).toHaveLength(1);
   });
+
+  it('follows a sell that arrives while the copy of its buy is still in flight', async () => {
+    const { engine, store, swap } = setup();
+    const buy = engine.handleSwap(...swap(WALLET_A, 'buy'));
+    const sell = engine.handleSwap(...swap(WALLET_A, 'sell', { tokenAmountRaw: 1000n }, 1000n));
+    expect((await buy).decision).toBe('accepted');
+    expect((await sell).decision).toBe('accepted');
+    expect(store.positions[0]).toMatchObject({ status: 'closed', closeReason: 'follow_sell' });
+  });
+
+  it('retries a follow-sell quote that failed once', async () => {
+    const { engine, store, getOrder, swap } = await withPosition();
+    getOrder.mockRejectedValueOnce(new JupiterApiError('getOrder', null, 'timed out'));
+    const outcome = await engine.handleSwap(
+      ...swap(WALLET_A, 'sell', { tokenAmountRaw: 1000n }, 1000n),
+    );
+    expect(outcome.decision).toBe('accepted');
+    expect(getOrder).toHaveBeenCalledTimes(2);
+    expect(store.positions[0]?.status).toBe('closed');
+  });
+
+  it('records the sell signal and reports the error when the quote keeps failing', async () => {
+    const { engine, store, getOrder, events, swap } = await withPosition();
+    getOrder.mockRejectedValue(new JupiterApiError('getOrder', 500, 'internal'));
+    const outcome = await engine.handleSwap(...swap(WALLET_A, 'sell', {}, 1000n));
+    expect(outcome.decision).toBe('failed');
+    expect(store.signals[1]).toMatchObject({ decision: 'rejected', swapEventId: 2 });
+    expect(store.signals[1]?.reasons.map((r) => r.code)).toEqual(['quote_failed']);
+    expect(events.executionError).toHaveBeenCalledWith(
+      expect.objectContaining({ tokenMint: MINT_A, side: 'sell' }),
+    );
+    expect(store.positions[0]?.status).toBe('open');
+  });
 });

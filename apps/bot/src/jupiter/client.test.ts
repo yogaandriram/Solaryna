@@ -2,7 +2,12 @@ import { Secret } from '@solaryna/config';
 import { WSOL_MINT } from '@solaryna/core';
 import { describe, expect, it, vi } from 'vitest';
 import { JupiterApiError, createJupiterClient } from './client';
-import type { RateLimiter, RequestPriority } from './rate-limiter';
+import {
+  RequestExpiredError,
+  createRateLimiter,
+  type RateLimiter,
+  type RequestPriority,
+} from './rate-limiter';
 
 const API_KEY = 'fake-jupiter-api-key';
 const MINT = 'AbrEhdN9Zsb5AvE5Pubd9VkUUr6ufAHfZ9zo7KAppump';
@@ -117,6 +122,35 @@ describe('createJupiterClient.getOrder', () => {
     );
     expect((await client.getOrder(orderParams, 'exit'))?.outAmountRaw).toBe(1_129_709_550_122n);
     expect(pauseUntil).toHaveBeenCalledWith(1_005_000);
+  });
+
+  it('keeps the rate-limit pause between one and sixty seconds', async () => {
+    for (const [reset, expected] of [
+      ['99999999999', 1_060_000],
+      ['900', 1_001_000],
+    ] as const) {
+      let attempt = 0;
+      const { client, pauseUntil } = setup(() =>
+        attempt++ === 0 ? json({}, 429, { 'x-ratelimit-reset': reset }) : json(orderBody),
+      );
+      await client.getOrder(orderParams, 'exit');
+      expect(pauseUntil).toHaveBeenCalledWith(expected);
+    }
+  });
+
+  it('lets a request that expired in the real limiter queue surface as RequestExpiredError', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(json(orderBody)));
+    const client = createJupiterClient({
+      apiKey: new Secret(API_KEY),
+      limiter: createRateLimiter({ now: () => 1_000_000 }),
+      fetch: fetchMock,
+      now: () => 1_000_000,
+    });
+    const error = await client
+      .getOrder(orderParams, 'buy', { expiresAt: 999_000 })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(RequestExpiredError);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('gives up after repeated 429s with a typed error', async () => {

@@ -8,7 +8,7 @@ import { createKeyedMutex } from '../engine/locks';
 import type { TradingEvents } from '../engine/sell';
 import { createPaperExecutor } from '../executor/paper';
 import { JupiterApiError, type JupiterClient } from '../jupiter/client';
-import { createPositionMonitor } from './monitor';
+import { UNROUTABLE_AFTER_CLIENT_ERRORS, createPositionMonitor } from './monitor';
 
 const MINT_A = 'AbrEhdN9Zsb5AvE5Pubd9VkUUr6ufAHfZ9zo7KAppump';
 const MINT_B = '4CLJSkwJ7JsNvrtZrVwqcXecYrAwUTSkTC1p7gzqpump';
@@ -206,8 +206,11 @@ describe('createPositionMonitor', () => {
     const run = monitor.runOnce();
     release();
     await Promise.all([holder, run]);
-    expect(getOrder).not.toHaveBeenCalled();
+    // Quoted without the lock, but the re-read under the lock sees it closed: no second sale.
+    expect(getOrder).toHaveBeenCalledTimes(1);
     expect(store.trades).toHaveLength(0);
+    expect(store.positions[0]).toMatchObject({ status: 'closed', closeReason: 'follow_sell' });
+    expect(monitor.valuation(1)).toBeUndefined();
   });
 
   it('keeps checking other positions when one fails, without alerting', async () => {
@@ -225,5 +228,62 @@ describe('createPositionMonitor', () => {
     store.positions.push(position(1, MINT_A));
     await Promise.all([monitor.runOnce(), monitor.runOnce()]);
     expect(getOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('quotes every position without waiting for a token lock', async () => {
+    const { monitor, store, getOrder, locks } = setup(() => 60_000_000n);
+    store.positions.push(position(1, MINT_A), position(2, MINT_B));
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const holder = locks.run(MINT_A, () => gate);
+    const run = monitor.runOnce();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getOrder).toHaveBeenCalledTimes(2);
+    release();
+    await Promise.all([holder, run]);
+    expect(monitor.valuation(1)?.netValueLamports).toBe(59_795_000n);
+  });
+
+  it('discards a quote when the position was sold while it was being quoted', async () => {
+    const { monitor, store } = setup((mint) => {
+      // A follow-sell halves the position while this take-profit quote is in flight.
+      const current = store.positions[0];
+      if (mint === MINT_A && current !== undefined) {
+        store.positions[0] = { ...current, tokenAmountRaw: 500_000_000n };
+      }
+      return 101_000_000n;
+    });
+    store.positions.push(position(1, MINT_A));
+    await monitor.runOnce();
+    expect(store.trades).toHaveLength(0);
+    expect(store.positions[0]).toMatchObject({ status: 'open', tokenAmountRaw: 500_000_000n });
+  });
+
+  it('writes off a position past max hold whose quotes keep failing with a client error', async () => {
+    const { monitor, store, advanceMinutes } = setup(
+      () => new JupiterApiError('getOrder', 400, 'token not tradable'),
+    );
+    store.positions.push(position(1, MINT_A));
+    advanceMinutes(231);
+    for (let i = 1; i < UNROUTABLE_AFTER_CLIENT_ERRORS; i++) {
+      await monitor.runOnce();
+    }
+    expect(store.positions[0]?.status).toBe('open');
+    await monitor.runOnce();
+    expect(store.positions[0]).toMatchObject({ status: 'closed', closeReason: 'unsellable' });
+  });
+
+  it('keeps a position open while Jupiter itself is failing', async () => {
+    const { monitor, store, advanceMinutes } = setup(
+      () => new JupiterApiError('getOrder', 429, 'rate limited'),
+    );
+    store.positions.push(position(1, MINT_A));
+    advanceMinutes(231);
+    for (let i = 0; i < UNROUTABLE_AFTER_CLIENT_ERRORS + 2; i++) {
+      await monitor.runOnce();
+    }
+    expect(store.positions[0]?.status).toBe('open');
   });
 });

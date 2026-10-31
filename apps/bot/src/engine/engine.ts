@@ -48,6 +48,9 @@ export interface Engine {
   ): Promise<SignalOutcome>;
 }
 
+const FOLLOW_SELL_QUOTE_ATTEMPTS = 3;
+const FOLLOW_SELL_RETRY_DELAY_MS = 1000;
+
 const errorText = (error: unknown) =>
   (error instanceof Error ? error.message : String(error)).slice(0, 300);
 
@@ -59,8 +62,11 @@ const errorText = (error: unknown) =>
 export function createEngine(deps: EngineDeps): Engine {
   const { store, executor, limits } = deps;
   const mode = executor.mode;
-  /** Tokens with a buy in flight: they count as held and as open positions. */
-  const pendingBuys = new Set<string>();
+  /**
+   * Tokens with a buy in flight: they count as held and as open positions. A sell by the same
+   * wallet waits for `settled`, so a fast flip is followed instead of dropped.
+   */
+  const pendingBuys = new Map<string, { walletId: number; settled: Promise<void> }>();
 
   function signalRow(
     event: SwapEvent,
@@ -104,8 +110,14 @@ export function createEngine(deps: EngineDeps): Engine {
     const token = event.tokenMint;
     // Claimed synchronously, before any await, so a simultaneous buy of the same token sees it.
     const claimed = !pendingBuys.has(token);
-    const otherPending = [...pendingBuys].filter((mint) => mint !== token);
-    pendingBuys.add(token);
+    const otherPending = [...pendingBuys.keys()].filter((mint) => mint !== token);
+    let settle = () => {};
+    if (claimed) {
+      const settled = new Promise<void>((resolve) => {
+        settle = resolve;
+      });
+      pendingBuys.set(token, { walletId: wallet.id, settled });
+    }
     try {
       const day = zonedDayRange(deps.now(), deps.displayTimeZone);
       const [paused, open, realizedToday, blacklisted, cooldownUntil] = await Promise.all([
@@ -274,6 +286,22 @@ export function createEngine(deps: EngineDeps): Engine {
     } finally {
       if (claimed) {
         pendingBuys.delete(token);
+        settle();
+      }
+    }
+  }
+
+  /** Quotes a follow-sell, retrying transient errors; the wallet may be dumping. */
+  async function prepareFollowSell(tokenMint: string, tokenAmountRaw: bigint) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await executor.prepareSell({ tokenMint, tokenAmountRaw }, 'exit');
+      } catch (error) {
+        if (attempt >= FOLLOW_SELL_QUOTE_ATTEMPTS) {
+          throw error;
+        }
+        deps.logger.warn({ err: error, tokenMint, attempt }, 'Follow-sell quote failed; retrying');
+        await deps.sleep(FOLLOW_SELL_RETRY_DELAY_MS);
       }
     }
   }
@@ -288,6 +316,11 @@ export function createEngine(deps: EngineDeps): Engine {
       walletSoldRaw: event.tokenAmountRaw.toString(),
       walletBalanceBeforeRaw: context.walletTokenBalanceBeforeRaw.toString(),
     };
+    // Read synchronously: a copy of this wallet's buy may still be running.
+    const pendingBuy = pendingBuys.get(token);
+    if (pendingBuy?.walletId === wallet.id) {
+      await pendingBuy.settled;
+    }
     const held = await store.findOpenPositionByToken(mode, token);
     if (held === undefined || held.trackedWalletId !== wallet.id) {
       return reject(event, wallet, context, [{ code: 'not_holding' }], riskInputs);
@@ -313,10 +346,21 @@ export function createEngine(deps: EngineDeps): Engine {
       if (await store.isTradingPaused()) {
         return reject(event, wallet, context, [{ code: 'trading_paused' }], riskInputs);
       }
-      const prepared = await executor.prepareSell(
-        { tokenMint: token, tokenAmountRaw: amount },
-        'exit',
-      );
+      let prepared: PrepareResult;
+      try {
+        prepared = await prepareFollowSell(token, amount);
+      } catch (error) {
+        const message = errorText(error);
+        await reject(
+          event,
+          wallet,
+          context,
+          [{ code: 'quote_failed', detail: { error: message } }],
+          riskInputs,
+        );
+        deps.events.executionError({ tokenMint: token, side: 'sell', message });
+        return { decision: 'failed', side: 'sell', message } satisfies SignalOutcome;
+      }
       if (!prepared.ok) {
         return reject(event, wallet, context, [{ code: 'no_route' }], riskInputs);
       }
