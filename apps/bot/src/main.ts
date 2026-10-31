@@ -8,15 +8,18 @@ import {
 } from '@solaryna/config';
 import { pendingBuyFeesLamports, remainingCostLamports } from '@solaryna/core';
 import {
+  DASHBOARD_ACTOR,
   addManualWallet,
   createDb,
   deactivateWallet,
   findToken,
   insertSwapEvent,
   listActiveWallets,
+  listAuditLogAfter,
   listClosedReportPositions,
   listReportBuySignals,
   listReportTrades,
+  maxAuditLogId,
   upsertTokenMetadata,
   type PositionRow,
 } from '@solaryna/db';
@@ -34,6 +37,7 @@ import { createIngestor } from './ingest/ingestor';
 import { LogsSubscriber, toWebSocketUrl } from './ingest/logs-subscriber';
 import { createTransactionFetcher } from './ingest/transaction-fetcher';
 import { HELIUS_WEBHOOK_PATH, buildWebhookServer } from './ingest/webhook-server';
+import { createDashboardAuditJob } from './jobs/dashboard-audit';
 import { createReportJob } from './jobs/reports';
 import { createWalletSync, type SubscriptionTarget } from './jobs/wallet-sync';
 import { createJupiterClient } from './jupiter/client';
@@ -313,6 +317,16 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
     logger,
   });
 
+  const dashboardAudit = createDashboardAuditJob({
+    source: {
+      maxId: () => maxAuditLogId(db),
+      listAfter: (afterId) => listAuditLogAfter(db, afterId, DASHBOARD_ACTOR),
+    },
+    notify: (html) => notifier.notify(html),
+    onLimitsChanged: () => void riskLimits.refresh(),
+    logger,
+  });
+
   const source = createIngestSource(config, { helius, ingest, logger });
   const walletSync = createWalletSync({ registry, target: source.target, logger });
 
@@ -322,6 +336,8 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
   await source.start();
   walletSync.start();
   riskLimits.start();
+  await dashboardAudit.tick();
+  dashboardAudit.start();
   monitor.start();
   reports.start();
 
@@ -366,6 +382,7 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
     walletSync.stop();
     await source.stop();
     riskLimits.stop();
+    await dashboardAudit.stop();
     await Promise.all([monitor.stop(), reports.stop()]);
     await Promise.all(decisions);
     await alerts;

@@ -192,3 +192,6 @@ export async function listAuditLogAfter(
 export async function listRecentAuditLog(db: Database, limit: number): Promise<AuditLogRow[]> {
   return db.select().from(auditLog).orderBy(desc(auditLog.id)).limit(limit);
 }
+
+/** audit_log actor for changes made in the dashboard (the bot announces these in Telegram). */
+export const DASHBOARD_ACTOR = 'dashboard';
