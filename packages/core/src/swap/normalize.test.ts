@@ -134,6 +134,15 @@ describe('normalizeSwap with real transactions', () => {
     });
   });
 
+  it("reports the wallet's token balance before the swap", () => {
+    // The wallet sold its whole balance.
+    expect(swapOf('pumpfun-sell-v1').breakdown.walletTokenBalanceBeforeRaw).toBe(
+      27_483_996_149_265n,
+    );
+    // The token account was created by this buy.
+    expect(swapOf('pumpfun-buy-v1-new-ata').breakdown.walletTokenBalanceBeforeRaw).toBe(0n);
+  });
+
   it('fills the event identity fields from the transaction', () => {
     const { event } = swapOf('pumpfun-sell-v1');
     expect(event).toMatchObject({

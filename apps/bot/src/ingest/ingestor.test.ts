@@ -2,10 +2,11 @@ import type { SwapEvent } from '@solaryna/core';
 import { pino } from 'pino';
 import { describe, expect, it, vi } from 'vitest';
 import type { TrackedWalletInfo } from '../wallets/registry';
-import { createIngestor } from './ingestor';
+import { createIngestor, type NewSwapContext } from './ingestor';
 import { loadFixture } from './test-fixtures';
 
 const logger = pino({ level: 'silent' });
+const NOW = new Date('2026-10-31T05:00:00Z');
 
 function setup(trackedAddresses: string[]) {
   const wallets = new Map<string, TrackedWalletInfo>(
@@ -14,9 +15,11 @@ function setup(trackedAddresses: string[]) {
   const stored = new Set<string>();
   const saveSwapEvent = vi.fn((event: SwapEvent, _raw: unknown) => {
     const key = `${event.signature}:${event.wallet}`;
-    const status: 'inserted' | 'duplicate' = stored.has(key) ? 'duplicate' : 'inserted';
+    if (stored.has(key)) {
+      return Promise.resolve({ status: 'duplicate' as const });
+    }
     stored.add(key);
-    return Promise.resolve(status);
+    return Promise.resolve({ status: 'inserted' as const, id: stored.size });
   });
   const onNewSwap = vi.fn();
   const ingest = createIngestor({
@@ -24,6 +27,7 @@ function setup(trackedAddresses: string[]) {
     saveSwapEvent,
     onNewSwap,
     logger,
+    now: () => NOW,
   });
   return { ingest, saveSwapEvent, onNewSwap };
 }
@@ -38,7 +42,16 @@ describe('createIngestor', () => {
 
     expect(saveSwapEvent).toHaveBeenCalledTimes(2);
     expect(onNewSwap).toHaveBeenCalledTimes(1);
-    const [event, wallet] = onNewSwap.mock.calls[0] as [SwapEvent, TrackedWalletInfo];
+    const [event, wallet, context] = onNewSwap.mock.calls[0] as [
+      SwapEvent,
+      TrackedWalletInfo,
+      NewSwapContext,
+    ];
+    expect(context).toEqual({
+      swapEventId: 1,
+      receivedAt: NOW,
+      walletTokenBalanceBeforeRaw: 27_483_996_149_265n,
+    });
     expect(event).toMatchObject({ side: 'sell', wallet: feePayer, source: 'pumpfun' });
     expect(wallet.address).toBe(feePayer);
     expect(saveSwapEvent.mock.calls[0]?.[1]).toMatchObject({ version: 1, feeLamports: '9000' });

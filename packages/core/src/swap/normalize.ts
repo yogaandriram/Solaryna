@@ -21,6 +21,8 @@ export interface SwapBreakdown {
   wsolDeltaLamports: bigint;
   /** Token-account rent paid (+) or refunded (−) by the wallet, excluded from the quote. */
   rentAdjustmentLamports: bigint;
+  /** The wallet's balance of the swapped token before the transaction (for follow-sell). */
+  walletTokenBalanceBeforeRaw: bigint;
   programIds: string[];
 }
 
@@ -144,6 +146,9 @@ export function normalizeSwap(tx: RawTransaction, wallet: string): NormalizeSwap
     return skip('multiple_token_changes');
   }
   const [tokenMint, token] = first;
+  const walletTokenBalanceBefore = accounts
+    .filter((account) => account.mint === tokenMint)
+    .reduce((sum, account) => sum + (account.pre ?? 0n), 0n);
 
   const side: SwapSide = token.delta > 0n ? 'buy' : 'sell';
   const solDelta = nativeDelta + wsolDelta + rentAdjustment;
@@ -180,6 +185,7 @@ export function normalizeSwap(tx: RawTransaction, wallet: string): NormalizeSwap
       nativeDeltaLamports: nativeDelta,
       wsolDeltaLamports: wsolDelta,
       rentAdjustmentLamports: rentAdjustment,
+      walletTokenBalanceBeforeRaw: walletTokenBalanceBefore,
       programIds,
     },
   };

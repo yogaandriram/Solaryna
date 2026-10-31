@@ -119,7 +119,7 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
   let alerts: Promise<void> = Promise.resolve();
   const ingest = createIngestor({
     registry,
-    saveSwapEvent: async (event, raw) => (await insertSwapEvent(db, event, raw)).status,
+    saveSwapEvent: (event, raw) => insertSwapEvent(db, event, raw),
     onNewSwap: (event, wallet) => {
       alerts = alerts
         .then(async () => {

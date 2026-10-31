@@ -8,12 +8,23 @@ import {
 import type { Logger } from 'pino';
 import type { TrackedWalletInfo, WalletRegistry } from '../wallets/registry';
 
+/** What the engine needs about a newly stored swap besides the event itself. */
+export interface NewSwapContext {
+  swapEventId: number;
+  receivedAt: Date;
+  walletTokenBalanceBeforeRaw: bigint;
+}
+
 export interface IngestorDeps {
   registry: Pick<WalletRegistry, 'get'>;
-  saveSwapEvent(event: SwapEvent, raw: unknown): Promise<'inserted' | 'duplicate'>;
+  saveSwapEvent(
+    event: SwapEvent,
+    raw: unknown,
+  ): Promise<{ status: 'inserted'; id: number } | { status: 'duplicate' }>;
   /** Called once per newly stored swap. Must not throw; runs after the swap is persisted. */
-  onNewSwap(event: SwapEvent, wallet: TrackedWalletInfo): void;
+  onNewSwap(event: SwapEvent, wallet: TrackedWalletInfo, context: NewSwapContext): void;
   logger: Logger;
+  now?: () => Date;
 }
 
 export interface IngestStats {
@@ -35,6 +46,7 @@ function compactRaw(tx: RawTransaction, breakdown: SwapBreakdown) {
 }
 
 export function createIngestor(deps: IngestorDeps) {
+  const now = deps.now ?? (() => new Date());
   return async function ingest(transactions: readonly RawTransaction[]): Promise<IngestStats> {
     const stats: IngestStats = { swaps: 0, duplicates: 0, skipped: 0 };
     for (const tx of transactions) {
@@ -56,8 +68,9 @@ export function createIngestor(deps: IngestorDeps) {
           );
           continue;
         }
-        const status = await deps.saveSwapEvent(result.event, compactRaw(tx, result.breakdown));
-        if (status === 'duplicate') {
+        const receivedAt = now();
+        const saved = await deps.saveSwapEvent(result.event, compactRaw(tx, result.breakdown));
+        if (saved.status === 'duplicate') {
           stats.duplicates++;
           deps.logger.debug({ signature, wallet: signer }, 'Duplicate swap delivery ignored');
           continue;
@@ -73,7 +86,11 @@ export function createIngestor(deps: IngestorDeps) {
           },
           'Swap ingested',
         );
-        deps.onNewSwap(result.event, wallet);
+        deps.onNewSwap(result.event, wallet, {
+          swapEventId: saved.id,
+          receivedAt,
+          walletTokenBalanceBeforeRaw: result.breakdown.walletTokenBalanceBeforeRaw,
+        });
       }
     }
     return stats;
