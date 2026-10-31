@@ -86,6 +86,10 @@ npm run db:generate         # buat file migrasi dari skema Drizzle (packages/db/
 npm run db:migrate          # terapkan migrasi ke MySQL
 npm run wallets:import -- wallets.txt          # impor wallet incaran dari file teks
 npm run fixture:fetch -- <signature> <nama>    # simpan tx mainnet sebagai fixture parser
+npm run dev:web             # dashboard (next dev) di http://127.0.0.1:3000
+npm run build:web           # build dashboard produksi
+npm run start:web           # jalankan hasil build (DASHBOARD_HOST/DASHBOARD_PORT)
+npm run seed:demo           # data demo dashboard; hanya ke database yang namanya mengandung "test"
 npm run test                # vitest semua workspace
 npm run typecheck           # tsc --noEmit semua workspace
 npm run lint                # ESLint
@@ -95,7 +99,6 @@ npm run format              # Prettier (format:check untuk cek saja)
 Belum dibuat (menyusul sesuai milestone):
 
 ```bash
-npm run dev:web             # M3 — dashboard di http://localhost:3000
 npm run score -- --days 30  # M4 — rescoring wallet manual (scripts/)
 ```
 
@@ -123,6 +126,17 @@ Catatan implementasi M2 yang perlu dijaga:
 - Kunci tabel `settings`: `trading_paused` (kill switch), `last_daily_report`, `last_weekly_report` (cursor laporan, tanggal lokal `YYYY-MM-DD`).
 - Teks error yang dikirim ke Telegram di-scrub dengan `createSecretScrubber` karena tidak lewat logger.
 - `npm run db:generate -- --name x` tidak meneruskan nama; untuk migrasi bernama jalankan `npx drizzle-kit generate --name <nama>` dari `packages/db`.
+
+Catatan implementasi M3 yang perlu dijaga:
+- `apps/web` memakai Next.js 16 (App Router, Turbopack): `src/proxy.ts` menggantikan middleware; `cookies()`, `headers()`, `params`, `searchParams` semuanya async. API Next berubah antar versi — cek `node_modules/next/dist/docs/` sebelum mengubah routing, action, atau caching. File `page.tsx` hanya boleh mengekspor ekspor route (default, `metadata`, …); konstanta bersama taruh di `src/lib`.
+- Dashboard hanya memuat `WEB_ENV_KEYS` lewat `loadWebEnv`/`getWebConfig()` (server-only) — tidak ada API key, token, atau private key. Jangan menambah kunci bot ke skema web.
+- `proxy.ts` hanya mengalihkan permintaan tanpa cookie; pemeriksaan sesi yang sebenarnya adalah `requireSession()`, wajib di setiap page **dan** setiap server action. Token sesi `v1.<exp>.<hmac>` dengan kunci turunan scrypt dari `DASHBOARD_PASSWORD` (ganti password = semua sesi batal); limiter login 10 gagal/15 menit, di memori.
+- Setiap perubahan dari dashboard lewat fungsi `@solaryna/db` dengan `{ actor: DASHBOARD_ACTOR }`, yang menulis `audit_log` di transaksi yang sama. Job bot `jobs/dashboard-audit.ts` membaca entri actor `dashboard` tiap 15 detik untuk mengumumkannya di Telegram dan memuat ulang batas risiko.
+- Batas risiko runtime: kunci `settings` `risk_limits` (objek string). Nilai `.env` adalah plafon; `effectiveRiskLimits` (core) dipakai bot dan dashboard, jadi baris DB yang diedit manual tidak bisa melonggarkan apa pun. Validasi form di `apps/web/src/lib/limits-form.ts`; `COPY_DELAY_MS` dan `MAX_PRIORITY_FEE_LAMPORTS` hanya lewat `.env`.
+- Mode dipilih lewat `?mode=live`; semua query dashboard memfilter `mode` dan tidak pernah menjumlahkan paper + live. Estimasi posisi terbuka memakai `positions.last_value_lamports` yang disimpan monitor bot — dashboard tidak memanggil Jupiter.
+- Paginasi offset mengambil `PAGE_SIZE + 1` baris (`splitPage`) untuk tahu ada halaman berikutnya. React 19 me-reset form setelah action, jadi state action mengembalikan nilai isian saat error.
+- Warna grafik (`gain`/`loss` di `globals.css`) sudah divalidasi untuk mode terang dan gelap; validasi ulang bila diubah.
+- `seed:demo` menolak database yang namanya tidak mengandung `test` dan mengosongkannya; pakai `solaryna_demo_test`, karena `solaryna_test` dikosongkan oleh test suite.
 
 Sebelum menyatakan pekerjaan selesai: jalankan `npm run typecheck`, `npm run lint`, dan `npm run test`, lalu laporkan hasilnya apa adanya.
 
@@ -161,7 +175,9 @@ TELEGRAM_BOT_TOKEN=
 TELEGRAM_ALLOWED_CHAT_IDS=      # daftar chat id yang boleh memberi perintah, pisahkan koma
 
 # Dashboard
-DASHBOARD_PASSWORD=             # wajib diisi; dashboard menolak start jika kosong
+DASHBOARD_PASSWORD=             # wajib diisi, min. 12 karakter; dashboard menolak start jika kosong
+DASHBOARD_HOST=127.0.0.1        # 0.0.0.0 agar bisa dibuka dari HP di jaringan yang sama
+DASHBOARD_PORT=3000
 
 # Mode trading
 TRADING_MODE=paper              # paper | live

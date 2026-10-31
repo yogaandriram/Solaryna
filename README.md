@@ -11,10 +11,11 @@ Panduan lengkap arsitektur, aturan keamanan, dan milestone ada di [CLAUDE.md](CL
 
 ## Status
 
-Milestone **M2 (paper trading)**. Bot menerima transaksi wallet incaran (webhook Helius atau
-websocket), menormalisasi swap beli/jual, mengirim alert Telegram, lalu **menyimulasikan** apakah
-swap itu diikuti: aturan risiko, quote Jupiter nyata, posisi, exit otomatis, dan laporan PnL.
-Tidak ada transaksi yang dikirim. Live trading baru ada di M5.
+Milestone **M2 (paper trading)** dan **M3 (dashboard web)**. Bot menerima transaksi wallet incaran
+(webhook Helius atau websocket), menormalisasi swap beli/jual, mengirim alert Telegram, lalu
+**menyimulasikan** apakah swap itu diikuti: aturan risiko, quote Jupiter nyata, posisi, exit
+otomatis, dan laporan PnL. Dashboard menampilkan semuanya dan bisa mengatur kill switch, wallet,
+dan batas risiko. Tidak ada transaksi yang dikirim. Live trading baru ada di M5.
 
 ## Prasyarat
 
@@ -102,6 +103,61 @@ Laporan mingguan menguraikan PnL setiap posisi yang ditutup menjadi:
 Rumus lengkapnya ada di [packages/core/src/pnl/README.md](packages/core/src/pnl/README.md). Bila
 harga masuk wallet tidak bisa dihitung, posisi itu ditandai "tidak tersedia".
 
+## Dashboard
+
+Dashboard web (Next.js) membaca database yang sama dengan bot. Isi `DASHBOARD_PASSWORD` di `.env`
+sendiri (minimal 12 karakter), lalu:
+
+```bash
+npm run dev:web             # http://127.0.0.1:3000
+```
+
+Dashboard hanya membaca kunci `.env` miliknya sendiri (database, password, alamat, batas risiko),
+bukan API key, token Telegram, atau private key. Login memakai password itu; sesi berlaku 7 hari,
+dan setelah 10 kali salah dalam 15 menit login dikunci sementara.
+
+**Buka dari HP** (satu Wi-Fi dengan laptop): isi `DASHBOARD_HOST=0.0.0.0`, lalu
+
+```bash
+npm run build:web
+npm run start:web
+```
+
+dan buka `http://<IP laptop>:3000` di HP (IP terlihat dari `ipconfig`). Izinkan Node.js di
+Windows Firewall bila diminta. Koneksi ini HTTP biasa, jadi pakai hanya di jaringan rumah yang
+dipercaya; untuk diakses dari internet, pasang di balik reverse proxy HTTPS (lihat Deploy di
+CLAUDE.md).
+
+Halaman:
+
+| Halaman            | Isi                                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| **Ringkasan**      | PnL hari ini / 7 hari / total, posisi terbuka & estimasinya, grafik PnL 14 hari, kill switch, sinyal terbaru |
+| **Wallet**         | Statistik per wallet incaran, tambah wallet, aktifkan/nonaktifkan, detail per wallet                         |
+| **Sinyal**         | Semua sinyal dengan keputusan dan alasannya; filter diterima/ditolak, beli/jual, wallet                      |
+| **Posisi & Trade** | Posisi terbuka, posisi ditutup, daftar trade; detail posisi dengan rincian biaya                             |
+| **Pengaturan**     | Kill switch, batas risiko runtime, nilai yang hanya lewat `.env`, riwayat perubahan                          |
+
+- Tombol **Paper / Live** di atas memilih data yang ditampilkan. Data paper dan live tidak pernah
+  dijumlahkan, dan dashboard tidak bisa mengaktifkan mode live.
+- Halaman diperbarui otomatis tiap 30 detik selama tab terbuka.
+- **Batas risiko runtime** hanya bisa dibuat lebih ketat dari nilai `.env`; untuk melonggarkan,
+  ubah `.env` lalu restart bot. Bot memakai batas baru dalam ±15 detik dan memuat perubahan wallet
+  dalam ±1 menit.
+- Setiap aksi dashboard (jeda/lanjut, ubah batas, tambah/nonaktifkan wallet) dicatat di
+  `audit_log` dan diumumkan bot di Telegram (bila bot sedang jalan).
+- Semua angka PnL sudah dikurangi biaya. Dashboard menampilkan catatan "bukan saran investasi".
+
+**Data demo** untuk melihat tampilan tanpa menyentuh database asli (nama database wajib
+mengandung `test`, isinya dikosongkan):
+
+```bash
+# Git Bash
+DATABASE_URL=mysql://root:@127.0.0.1:3306/solaryna_demo_test npm run db:create
+DATABASE_URL=mysql://root:@127.0.0.1:3306/solaryna_demo_test npm run seed:demo
+DATABASE_URL=mysql://root:@127.0.0.1:3306/solaryna_demo_test npm run dev:web
+```
+
 ## Sumber event
 
 ### Webhook Helius (`INGEST_SOURCE=webhook`)
@@ -152,6 +208,9 @@ Bot yang sedang jalan memuat wallet baru dalam satu menit. File `wallets*.txt` d
 | Perintah                                      | Fungsi                                                             |
 | --------------------------------------------- | ------------------------------------------------------------------ |
 | `npm run dev:bot`                             | Jalankan bot dengan auto-reload                                    |
+| `npm run dev:web`                             | Jalankan dashboard (mode development)                              |
+| `npm run build:web` / `npm run start:web`     | Build lalu jalankan dashboard (lebih cepat, untuk dibuka dari HP)  |
+| `npm run seed:demo`                           | Isi database `*test*` dengan data demo dashboard                   |
 | `npm run db:create`                           | Buat database jika belum ada                                       |
 | `npm run db:generate`                         | Buat file migrasi dari skema Drizzle (`packages/db/src/schema.ts`) |
 | `npm run db:migrate`                          | Terapkan migrasi ke MySQL                                          |
@@ -166,6 +225,7 @@ Bot yang sedang jalan memuat wallet baru dalam satu menit. File `wallets*.txt` d
 
 ```
 apps/bot          proses utama (24 jam): ingest, engine paper trading, exit, laporan, Telegram
+apps/web          dashboard Next.js: ringkasan, wallet, sinyal, posisi, pengaturan
 packages/core     logika murni tanpa I/O: parser swap, risiko, PnL & laporan, waktu, format angka
 packages/config   skema env (zod), loader .env, Secret, resolver mode trading
 packages/db       skema Drizzle, migrasi, client MySQL, query bersama
