@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { createLoginLimiter } from '../../server/auth/login-limiter';
-import { createSession, deleteSession, isDashboardPassword } from '../../server/auth/session';
+import { createSession, isDashboardPassword } from '../../server/auth/session';
 
 export interface LoginState {
   error: string | null;
@@ -28,9 +28,4 @@ export async function login(_previous: LoginState, formData: FormData): Promise<
   limiter.reset();
   await createSession();
   redirect('/');
-}
-
-export async function logout(): Promise<void> {
-  await deleteSession();
-  redirect('/login');
 }

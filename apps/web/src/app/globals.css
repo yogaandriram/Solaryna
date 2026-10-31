@@ -17,6 +17,9 @@
   --paper-soft: #fdf0d5;
   --live: #b91c1c;
   --live-soft: #fde4e4;
+  /* Chart marks for gain/loss, validated as a pair (CVD ΔE ≥ 8) on each surface. */
+  --gain: #16a06a;
+  --loss: #c0342b;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -35,6 +38,8 @@
     --paper-soft: #392a0c;
     --live: #f87171;
     --live-soft: #3a1515;
+    --gain: #2fae7a;
+    --loss: #cf3f3f;
   }
 }
 
@@ -53,6 +58,8 @@
   --color-paper-soft: var(--paper-soft);
   --color-live: var(--live);
   --color-live-soft: var(--live-soft);
+  --color-gain: var(--gain);
+  --color-loss: var(--loss);
 }
 
 body {

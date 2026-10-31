@@ -2,6 +2,7 @@ import { Decimal, USDC_MINT, WSOL_MINT } from '@solaryna/core';
 import { describe, expect, it } from 'vitest';
 import {
   formatDateTime,
+  formatDayKey,
   formatDuration,
   formatPct,
   formatQuoteAmount,
@@ -81,7 +82,11 @@ describe('time', () => {
 
   it('formats date and time in the display zone', () => {
     expect(formatDateTime(at, 'Asia/Jakarta')).toBe('31 Okt 2026, 10.53 WIB');
-    expect(formatTime(at, 'Asia/Jakarta')).toBe('10.53.41');
+    expect(formatTime(at, 'Asia/Jakarta')).toBe('10.53.41 WIB');
+  });
+
+  it('formats a zoned date key', () => {
+    expect(formatDayKey('2026-10-31')).toBe('Sab, 31 Okt');
   });
 
   it('formats durations', () => {

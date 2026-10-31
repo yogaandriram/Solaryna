@@ -94,14 +94,26 @@ export function formatDateTime(date: Date, timeZone: string): string {
   }).format(date);
 }
 
-/** "10.53.41" in the display time zone. */
+/** "10.53.41 WIB" in the display time zone. */
 export function formatTime(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat(LOCALE, {
     timeZone,
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
+    timeZoneName: 'short',
   }).format(date);
+}
+
+/** "Sab, 31 Okt" for a zoned date key `YYYY-MM-DD`. */
+export function formatDayKey(key: string): string {
+  const [year = 1970, month = 1, day = 1] = key.split('-').map(Number);
+  return new Intl.DateTimeFormat(LOCALE, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  }).format(Date.UTC(year, month - 1, day));
 }
 
 /** "45 dtk", "12 m", "3 j 5 m", "2 h 4 j" (rounded down). */

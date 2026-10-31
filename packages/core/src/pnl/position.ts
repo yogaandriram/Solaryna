@@ -10,6 +10,20 @@ export interface PositionState {
   realizedPnlLamports: bigint;
 }
 
+/** The PnL state of a stored position; no realized PnL yet counts as zero. */
+export function positionStateOf(
+  row: Omit<PositionState, 'realizedPnlLamports'> & { realizedPnlLamports: bigint | null },
+): PositionState {
+  return {
+    initialTokenAmountRaw: row.initialTokenAmountRaw,
+    tokenAmountRaw: row.tokenAmountRaw,
+    costLamports: row.costLamports,
+    proceedsLamports: row.proceedsLamports,
+    feesLamports: row.feesLamports,
+    realizedPnlLamports: row.realizedPnlLamports ?? 0n,
+  };
+}
+
 export interface SellFill {
   tokenAmountRaw: bigint;
   solAmountLamports: bigint;

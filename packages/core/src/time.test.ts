@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { dueReports, startOfZonedDay, zonedDateKey, zonedDayRange, zonedWeekRange } from './time';
+import {
+  dueReports,
+  lastZonedDaysRange,
+  startOfZonedDay,
+  zonedDateKey,
+  zonedDayKeys,
+  zonedDayRange,
+  zonedWeekRange,
+} from './time';
 
 const WIB = 'Asia/Jakarta';
 
@@ -38,6 +46,22 @@ describe('zoned day and week ranges', () => {
     expect(range.to.toISOString()).toBe('2026-11-01T17:00:00.000Z');
     // Monday 00:00 WIB starts a new week.
     expect(zonedWeekRange(new Date('2026-11-01T17:00:00Z'), WIB).key).toBe('2026-11-02');
+  });
+
+  it('lists the last N zoned days ending today, oldest first', () => {
+    const now = new Date('2026-10-31T05:00:00Z');
+    expect(zonedDayKeys(now, 3, WIB)).toEqual(['2026-10-29', '2026-10-30', '2026-10-31']);
+    expect(zonedDayKeys(new Date('2026-03-01T05:00:00Z'), 2, WIB)).toEqual([
+      '2026-02-28',
+      '2026-03-01',
+    ]);
+  });
+
+  it('returns the range of the last N zoned days including today', () => {
+    const range = lastZonedDaysRange(new Date('2026-10-31T05:00:00Z'), 7, WIB);
+    expect(range.key).toBe('2026-10-25');
+    expect(range.from.toISOString()).toBe('2026-10-24T17:00:00.000Z');
+    expect(range.to.toISOString()).toBe('2026-10-31T17:00:00.000Z');
   });
 });
 

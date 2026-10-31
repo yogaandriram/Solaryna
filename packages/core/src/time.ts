@@ -110,6 +110,23 @@ export function zonedDayRange(date: Date, timeZone: string): PeriodRange {
   return dayRange(zonedDateKey(date, timeZone), timeZone);
 }
 
+/** Keys of the last `days` zoned days ending with the day of `now`, oldest first. */
+export function zonedDayKeys(now: Date, days: number, timeZone: string): string[] {
+  const today = zonedDateKey(now, timeZone);
+  return Array.from({ length: days }, (_, i) => addDays(today, i - days + 1));
+}
+
+/** The last `days` zoned days up to the end of today; `key` is the first day. */
+export function lastZonedDaysRange(now: Date, days: number, timeZone: string): PeriodRange {
+  const today = zonedDateKey(now, timeZone);
+  const first = addDays(today, 1 - days);
+  return {
+    key: first,
+    from: startOfZonedDay(first, timeZone),
+    to: startOfZonedDay(addDays(today, 1), timeZone),
+  };
+}
+
 /** The zoned Monday-to-Monday week containing `date`. */
 export function zonedWeekRange(date: Date, timeZone: string): PeriodRange {
   return weekRange(mondayOf(zonedDateKey(date, timeZone)), timeZone);

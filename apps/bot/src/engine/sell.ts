@@ -2,6 +2,7 @@ import {
   Decimal,
   LAMPORTS_PER_SOL,
   applySell,
+  positionStateOf,
   type PositionState,
   type SwapEvent,
   type TradeReason,
@@ -31,16 +32,7 @@ export function chargedFeesLamports(fill: TradeFill): bigint {
   return fill.networkFeeLamports + fill.priorityFeeLamports;
 }
 
-export function positionState(position: PositionRow): PositionState {
-  return {
-    initialTokenAmountRaw: position.initialTokenAmountRaw,
-    tokenAmountRaw: position.tokenAmountRaw,
-    costLamports: position.costLamports,
-    proceedsLamports: position.proceedsLamports,
-    feesLamports: position.feesLamports,
-    realizedPnlLamports: position.realizedPnlLamports ?? 0n,
-  };
-}
+export const positionState = (position: PositionRow): PositionState => positionStateOf(position);
 
 /** SOL per whole token, for display; null when no tokens changed hands. */
 function priceSol(fill: TradeFill, tokenDecimals: number): string | null {

@@ -4,6 +4,7 @@ import {
   estimatedPnlLamports,
   followSellTokenAmount,
   pendingBuyFeesLamports,
+  positionStateOf,
   remainingCostLamports,
   type PositionState,
 } from './position';
@@ -122,5 +123,13 @@ describe('pendingBuyFeesLamports and estimatedPnlLamports', () => {
     expect(estimatedPnlLamports({ ...unsold, tokenAmountRaw: 500_000n }, 24_000_000n)).toBe(
       -1_000_000n,
     );
+  });
+});
+
+describe('positionStateOf', () => {
+  it('reads the PnL state of a stored position, with no realized PnL as zero', () => {
+    const row = { ...opened, realizedPnlLamports: null, status: 'open' };
+    expect(positionStateOf(row)).toEqual(opened);
+    expect(positionStateOf({ ...row, realizedPnlLamports: -5n }).realizedPnlLamports).toBe(-5n);
   });
 });
