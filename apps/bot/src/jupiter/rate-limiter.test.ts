@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { createRateLimiter, type RequestPriority } from './rate-limiter';
+import { describe, expect, it, vi } from 'vitest';
+import { RequestExpiredError, createRateLimiter, type RequestPriority } from './rate-limiter';
 
 /** A clock that only moves when the limiter sleeps. */
 function fakeClock() {
@@ -63,6 +63,19 @@ describe('createRateLimiter', () => {
     limiter.pauseUntil(15_000);
     await run('exit', 'after-pause');
     expect(started[1]).toEqual({ label: 'after-pause', at: 15_000 });
+  });
+
+  it('drops a request that expired while waiting, without running it', async () => {
+    const { limiter, started, run } = setup();
+    const first = run('buy', 'first');
+    const task = vi.fn(() => Promise.resolve('late'));
+    const late = limiter.schedule('buy', task, { expiresAt: 500 });
+    const onTime = limiter.schedule('buy', () => Promise.resolve('ok'), { expiresAt: 1000 });
+    await first;
+    await expect(late).rejects.toBeInstanceOf(RequestExpiredError);
+    await expect(onTime).resolves.toBe('ok');
+    expect(task).not.toHaveBeenCalled();
+    expect(started.map((s) => s.label)).toEqual(['first']);
   });
 
   it('keeps serving after a task fails', async () => {

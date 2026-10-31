@@ -16,6 +16,8 @@ export const RISK_REASON_CODES = [
   'signal_too_old',
   'price_impact_too_high',
   'no_route',
+  /** Jupiter answered the buy quote with an error (recorded with the error text). */
+  'quote_failed',
   // Sell signals only.
   'not_holding',
   'sell_amount_zero',

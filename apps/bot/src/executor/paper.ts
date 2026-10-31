@@ -21,6 +21,7 @@ export function createPaperExecutor(options: PaperExecutorOptions): Executor {
     tokenMint: string,
     amountRaw: bigint,
     priority: Parameters<Executor['prepareBuy']>[1],
+    scheduleOptions: Parameters<Executor['prepareBuy']>[2],
   ): Promise<PrepareResult> {
     const quote = await options.jupiter.getOrder(
       {
@@ -30,6 +31,7 @@ export function createPaperExecutor(options: PaperExecutorOptions): Executor {
         slippageBps: options.slippageBps,
       },
       priority,
+      scheduleOptions,
     );
     if (quote === null) {
       return { ok: false, reason: 'no_route' };
@@ -48,10 +50,10 @@ export function createPaperExecutor(options: PaperExecutorOptions): Executor {
 
   return {
     mode: 'paper',
-    prepareBuy: (params, priority) =>
-      prepare('buy', params.tokenMint, params.solAmountLamports, priority),
-    prepareSell: (params, priority) =>
-      prepare('sell', params.tokenMint, params.tokenAmountRaw, priority),
+    prepareBuy: (params, priority, scheduleOptions) =>
+      prepare('buy', params.tokenMint, params.solAmountLamports, priority, scheduleOptions),
+    prepareSell: (params, priority, scheduleOptions) =>
+      prepare('sell', params.tokenMint, params.tokenAmountRaw, priority, scheduleOptions),
     execute(order) {
       const buy = order.side === 'buy';
       const solAmount = buy ? order.inAmountRaw : order.outAmountRaw;

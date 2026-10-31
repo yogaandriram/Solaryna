@@ -1,7 +1,7 @@
 import type { Secret } from '@solaryna/config';
 import { Decimal, type TokenMarketData } from '@solaryna/core';
 import { z } from 'zod';
-import type { RateLimiter, RequestPriority } from './rate-limiter';
+import type { RateLimiter, RequestPriority, ScheduleOptions } from './rate-limiter';
 
 // Jupiter Swap API v2 (quote only: no `taker`, so no transaction is built) and Tokens API v2.
 // Checked against developers.jup.ag on 2026-10-31: header `x-api-key`; `priceImpact` is in
@@ -48,9 +48,14 @@ export interface JupiterClient {
   getOrder(
     params: { inputMint: string; outputMint: string; amountRaw: bigint; slippageBps: number },
     priority: RequestPriority,
+    options?: ScheduleOptions,
   ): Promise<JupiterOrder | null>;
   /** Market data for a mint, or null when Jupiter does not know it. */
-  getToken(mint: string, priority: RequestPriority): Promise<JupiterToken | null>;
+  getToken(
+    mint: string,
+    priority: RequestPriority,
+    options?: ScheduleOptions,
+  ): Promise<JupiterToken | null>;
 }
 
 export interface JupiterClientOptions {
@@ -139,15 +144,19 @@ export function createJupiterClient(options: JupiterClientOptions): JupiterClien
     operation: string,
     url: string,
     priority: RequestPriority,
+    scheduleOptions: ScheduleOptions | undefined,
   ): Promise<{ body: unknown } | { noRoute: true }> {
     for (let attempt = 0; ; attempt++) {
       let response: Response;
       try {
-        response = await options.limiter.schedule(priority, () =>
-          fetchImpl(url, {
-            headers: { 'x-api-key': options.apiKey.reveal() },
-            signal: AbortSignal.timeout(timeoutMs),
-          }),
+        response = await options.limiter.schedule(
+          priority,
+          () =>
+            fetchImpl(url, {
+              headers: { 'x-api-key': options.apiKey.reveal() },
+              signal: AbortSignal.timeout(timeoutMs),
+            }),
+          scheduleOptions,
         );
       } catch (error) {
         const detail =
@@ -186,7 +195,7 @@ export function createJupiterClient(options: JupiterClientOptions): JupiterClien
   }
 
   return {
-    async getOrder(params, priority) {
+    async getOrder(params, priority, scheduleOptions) {
       const query = new URLSearchParams({
         inputMint: params.inputMint,
         outputMint: params.outputMint,
@@ -197,6 +206,7 @@ export function createJupiterClient(options: JupiterClientOptions): JupiterClien
         'getOrder',
         `${baseUrl}/swap/v2/order?${query.toString()}`,
         priority,
+        scheduleOptions,
       );
       if ('noRoute' in result) {
         return null;
@@ -230,9 +240,9 @@ export function createJupiterClient(options: JupiterClientOptions): JupiterClien
       };
     },
 
-    async getToken(mint, priority) {
+    async getToken(mint, priority, scheduleOptions) {
       const url = `${baseUrl}/tokens/v2/search?query=${encodeURIComponent(mint)}`;
-      const result = await getJson('getToken', url, priority);
+      const result = await getJson('getToken', url, priority, scheduleOptions);
       if ('noRoute' in result) {
         return null;
       }

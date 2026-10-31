@@ -38,9 +38,11 @@ function setup(respond: (url: string) => Response | Promise<Response>) {
   const calls: { url: string; init: RequestInit; priority: RequestPriority }[] = [];
   let currentPriority: RequestPriority = 'monitor';
   const pauseUntil = vi.fn();
+  const expiries: (number | undefined)[] = [];
   const limiter: RateLimiter = {
-    schedule: (priority, task) => {
+    schedule: (priority, task, options) => {
       currentPriority = priority;
+      expiries.push(options?.expiresAt);
       return task();
     },
     pauseUntil,
@@ -57,7 +59,7 @@ function setup(respond: (url: string) => Response | Promise<Response>) {
     fetch: fetchMock,
     now: () => 1_000_000,
   });
-  return { client, calls, pauseUntil };
+  return { client, calls, pauseUntil, expiries };
 }
 
 const orderParams = {
@@ -95,6 +97,15 @@ describe('createJupiterClient.getOrder', () => {
     expect(order?.priceImpactPct.toString()).toBe('-0.42');
     expect(order?.inUsdValue?.toString()).toBe('9.25');
     expect(order?.snapshot).toEqual(orderBody);
+  });
+
+  it('passes an expiry to the limiter', async () => {
+    const { client, expiries } = setup((url) =>
+      url.includes('/tokens/') ? json([]) : json(orderBody),
+    );
+    await client.getOrder(orderParams, 'buy', { expiresAt: 123 });
+    await client.getToken(MINT, 'buy', { expiresAt: 456 });
+    expect(expiries).toEqual([123, 456]);
   });
 
   it('pauses the limiter until x-ratelimit-reset on 429 and retries', async () => {

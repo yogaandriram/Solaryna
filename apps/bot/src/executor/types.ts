@@ -1,6 +1,6 @@
 import type { Decimal, SwapSide, TradingMode } from '@solaryna/core';
 import type { JupiterOrder } from '../jupiter/client';
-import type { RequestPriority } from '../jupiter/rate-limiter';
+import type { RequestPriority, ScheduleOptions } from '../jupiter/rate-limiter';
 
 /** A quote the risk engine judges and the executor then fills, unchanged. */
 export interface PreparedOrder {
@@ -43,10 +43,12 @@ export interface Executor {
   prepareBuy(
     params: { tokenMint: string; solAmountLamports: bigint },
     priority: RequestPriority,
+    options?: ScheduleOptions,
   ): Promise<PrepareResult>;
   prepareSell(
     params: { tokenMint: string; tokenAmountRaw: bigint },
     priority: RequestPriority,
+    options?: ScheduleOptions,
   ): Promise<PrepareResult>;
   execute(order: PreparedOrder): Promise<TradeFill>;
 }

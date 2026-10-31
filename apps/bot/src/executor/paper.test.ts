@@ -46,6 +46,7 @@ describe('createPaperExecutor', () => {
     expect(getOrder).toHaveBeenCalledWith(
       { inputMint: WSOL_MINT, outputMint: MINT, amountRaw: 50_000_000n, slippageBps: 300 },
       'buy',
+      undefined,
     );
     if (!prepared.ok) {
       throw new Error('expected an order');
@@ -84,10 +85,12 @@ describe('createPaperExecutor', () => {
     const prepared = await executor.prepareSell(
       { tokenMint: MINT, tokenAmountRaw: 1_000_000n },
       'exit',
+      undefined,
     );
     expect(getOrder).toHaveBeenCalledWith(
       { inputMint: MINT, outputMint: WSOL_MINT, amountRaw: 1_000_000n, slippageBps: 300 },
       'exit',
+      undefined,
     );
     if (!prepared.ok) {
       throw new Error('expected an order');
@@ -103,6 +106,12 @@ describe('createPaperExecutor', () => {
     expect(fill.solUsdPrice?.toString()).toBe('180');
   });
 
+  it('passes the signal expiry to the quote request', async () => {
+    const { executor, getOrder } = setup(quote());
+    await executor.prepareBuy({ tokenMint: MINT, solAmountLamports: 1n }, 'buy', { expiresAt: 42 });
+    expect(getOrder.mock.calls[0]?.[2]).toEqual({ expiresAt: 42 });
+  });
+
   it('reports no_route when Jupiter has no route', async () => {
     const { executor } = setup(null);
     expect(
@@ -115,6 +124,7 @@ describe('createPaperExecutor', () => {
     const prepared = await executor.prepareBuy(
       { tokenMint: MINT, solAmountLamports: 50_000_000n },
       'buy',
+      undefined,
     );
     if (!prepared.ok) {
       throw new Error('expected an order');

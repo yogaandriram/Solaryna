@@ -6,8 +6,25 @@ export type RequestPriority = 'exit' | 'buy' | 'monitor';
 
 const RANK: Record<RequestPriority, number> = { exit: 0, buy: 1, monitor: 2 };
 
+/** The request was still queued at its `expiresAt`; it was dropped without being sent. */
+export class RequestExpiredError extends Error {
+  constructor() {
+    super('Request expired while waiting for the rate limiter');
+    this.name = 'RequestExpiredError';
+  }
+}
+
+export interface ScheduleOptions {
+  /** Epoch ms; if the request has not started by then it is rejected with RequestExpiredError. */
+  expiresAt?: number;
+}
+
 export interface RateLimiter {
-  schedule<T>(priority: RequestPriority, task: () => Promise<T>): Promise<T>;
+  schedule<T>(
+    priority: RequestPriority,
+    task: () => Promise<T>,
+    options?: ScheduleOptions,
+  ): Promise<T>;
   /** Holds every request until this time (epoch ms), e.g. after a 429. */
   pauseUntil(epochMs: number): void;
   readonly pending: number;
@@ -26,7 +43,9 @@ interface Entry {
   priority: RequestPriority;
   enqueuedAt: number;
   seq: number;
+  expiresAt: number;
   run: () => void;
+  expire: () => void;
 }
 
 export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter {
@@ -65,6 +84,17 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
     return bestIndex < 0 ? undefined : queue.splice(bestIndex, 1)[0];
   }
 
+  function dropExpired(): void {
+    const at = now();
+    for (let i = queue.length - 1; i >= 0; i--) {
+      const entry = queue[i];
+      if (entry !== undefined && entry.expiresAt < at) {
+        queue.splice(i, 1);
+        entry.expire();
+      }
+    }
+  }
+
   async function pump(): Promise<void> {
     if (pumping) {
       return;
@@ -74,6 +104,10 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
       // Let requests scheduled in the same tick queue up before choosing the first one.
       await Promise.resolve();
       while (queue.length > 0) {
+        dropExpired();
+        if (queue.length === 0) {
+          break;
+        }
         const wait = Math.max(lastStart + minIntervalMs, pausedUntil) - now();
         if (wait > 0) {
           await sleep(wait);
@@ -92,12 +126,20 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimiter
   }
 
   return {
-    schedule<T>(priority: RequestPriority, task: () => Promise<T>): Promise<T> {
+    schedule<T>(
+      priority: RequestPriority,
+      task: () => Promise<T>,
+      options: ScheduleOptions = {},
+    ): Promise<T> {
       return new Promise<T>((resolve, reject) => {
         queue.push({
           priority,
           enqueuedAt: now(),
           seq: seq++,
+          expiresAt: options.expiresAt ?? Number.POSITIVE_INFINITY,
+          expire: () => {
+            reject(new RequestExpiredError());
+          },
           // Starts the task without waiting for it: the limit is on request starts.
           run: () => {
             try {
