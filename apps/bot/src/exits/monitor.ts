@@ -34,7 +34,8 @@ export interface PositionMonitorDeps {
   store: TradingStore;
   executor: Executor;
   locks: KeyedMutex;
-  limits: RiskLimits;
+  /** Read once per cycle: the dashboard can tighten them at runtime. */
+  limits: () => RiskLimits;
   priorityFeeLamports: bigint;
   now: () => Date;
   events: TradingEvents;
@@ -61,7 +62,7 @@ const isClientError = (error: unknown) =>
  * exits wait for /resume.
  */
 export function createPositionMonitor(deps: PositionMonitorDeps): PositionMonitor {
-  const { store, executor, limits } = deps;
+  const { store, executor } = deps;
   const mode = executor.mode;
   const valuations = new Map<number, Valuation>();
   const clientErrors = new Map<number, number>();
@@ -80,7 +81,7 @@ export function createPositionMonitor(deps: PositionMonitorDeps): PositionMonito
     }
   }
 
-  async function check(quoted: Quote): Promise<void> {
+  async function check(quoted: Quote, limits: RiskLimits): Promise<void> {
     const positionId = quoted.position.id;
     const position = await store.getPosition(positionId);
     if (position?.status !== 'open') {
@@ -118,6 +119,16 @@ export function createPositionMonitor(deps: PositionMonitorDeps): PositionMonito
       remainingCostLamports: remainingCost,
       at: now,
     });
+    try {
+      await store.savePositionValuation({
+        positionId,
+        tokenAmountRaw: position.tokenAmountRaw,
+        netValueLamports: netValue,
+        at: now,
+      });
+    } catch (error) {
+      deps.logger.warn({ err: error, positionId }, 'Saving position valuation failed');
+    }
 
     const trigger = evaluateExit({
       remainingCostLamports: remainingCost,
@@ -173,6 +184,7 @@ export function createPositionMonitor(deps: PositionMonitorDeps): PositionMonito
   }
 
   async function runCycle(): Promise<void> {
+    const limits = deps.limits();
     const open = await store.listOpenPositions(mode);
     const openIds = new Set(open.map((p) => p.id));
     for (const tracked of [valuations, clientErrors]) {
@@ -185,7 +197,7 @@ export function createPositionMonitor(deps: PositionMonitorDeps): PositionMonito
     const quotes = await Promise.all(open.map(quote));
     for (const quoted of quotes) {
       try {
-        await deps.locks.run(quoted.position.tokenMint, () => check(quoted));
+        await deps.locks.run(quoted.position.tokenMint, () => check(quoted, limits));
       } catch (error) {
         deps.logger.warn({ err: error, positionId: quoted.position.id }, 'Position check failed');
       }

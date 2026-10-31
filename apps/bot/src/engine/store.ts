@@ -2,6 +2,7 @@ import type { TradingMode } from '@solaryna/core';
 import {
   findOpenPositionByToken,
   getPosition,
+  getRiskLimitOverrides,
   getSettingString,
   getWalletCooldown,
   insertSignal,
@@ -10,6 +11,7 @@ import {
   listOpenPositions,
   openPosition,
   recordSell,
+  savePositionValuation,
   saveTokenMarketData,
   setSettingString,
   setTradingPaused,
@@ -23,6 +25,7 @@ import {
 export type OpenPositionInput = Parameters<typeof openPosition>[1];
 export type RecordSellInput = Parameters<typeof recordSell>[1];
 export type TokenMarketDataInput = Parameters<typeof saveTokenMarketData>[1];
+export type PositionValuationInput = Parameters<typeof savePositionValuation>[1];
 
 /** The trading queries the engine, monitor and commands use; injected so tests run without MySQL. */
 export interface TradingStore {
@@ -42,6 +45,10 @@ export interface TradingStore {
   getWalletCooldown(walletId: number): Promise<Date | null>;
   isTokenBlacklisted(mint: string): Promise<boolean>;
   saveTokenMarketData(input: TokenMarketDataInput): Promise<void>;
+  /** Latest monitor valuation; false when the position changed or closed meanwhile. */
+  savePositionValuation(input: PositionValuationInput): Promise<boolean>;
+  /** Raw runtime risk limit overrides set by the dashboard (null when none). */
+  getRiskLimitOverrides(): Promise<unknown>;
 }
 
 export function createDbTradingStore(db: Database): TradingStore {
@@ -60,5 +67,7 @@ export function createDbTradingStore(db: Database): TradingStore {
     getWalletCooldown: (walletId) => getWalletCooldown(db, walletId),
     isTokenBlacklisted: (mint) => isTokenBlacklisted(db, mint),
     saveTokenMarketData: (input) => saveTokenMarketData(db, input),
+    savePositionValuation: (input) => savePositionValuation(db, input),
+    getRiskLimitOverrides: () => getRiskLimitOverrides(db),
   };
 }

@@ -59,6 +59,8 @@ const position: PositionRow = {
   feesLamports: 615_000n,
   realizedPnlLamports: -10_615_000n,
   closeReason: 'stop_loss',
+  lastValueLamports: null,
+  lastValuedAt: null,
   openedAt: AT,
   closedAt: AT,
   createdAt: AT,

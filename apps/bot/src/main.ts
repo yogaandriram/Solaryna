@@ -22,6 +22,7 @@ import {
 } from '@solaryna/db';
 import type { Logger } from 'pino';
 import { createEngine } from './engine/engine';
+import { createRiskLimitsSource } from './engine/limits-source';
 import { createKeyedMutex } from './engine/locks';
 import { positionState, type TradingEvents } from './engine/sell';
 import { createDbTradingStore } from './engine/store';
@@ -135,6 +136,13 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
     now,
   });
   const tradingStore = createDbTradingStore(db);
+  // .env limits, tightened at runtime from the dashboard.
+  const riskLimits = createRiskLimitsSource({
+    base: config.risk,
+    load: () => tradingStore.getRiskLimitOverrides(),
+    logger,
+  });
+  await riskLimits.refresh();
   const locks = createKeyedMutex();
 
   // Trade notices go out in the order they happened, even when a token lookup is slow.
@@ -191,7 +199,7 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
     executor,
     jupiter,
     locks,
-    limits: config.risk,
+    limits: () => riskLimits.current(),
     displayTimeZone: timeZone,
     now,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -202,7 +210,7 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
     store: tradingStore,
     executor,
     locks,
-    limits: config.risk,
+    limits: () => riskLimits.current(),
     priorityFeeLamports: config.risk.maxPriorityFeeLamports,
     now,
     events,
@@ -313,6 +321,7 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
   await walletSync.syncNow();
   await source.start();
   walletSync.start();
+  riskLimits.start();
   monitor.start();
   reports.start();
 
@@ -356,6 +365,7 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
     clearInterval(healthcheck);
     walletSync.stop();
     await source.stop();
+    riskLimits.stop();
     await Promise.all([monitor.stop(), reports.stop()]);
     await Promise.all(decisions);
     await alerts;

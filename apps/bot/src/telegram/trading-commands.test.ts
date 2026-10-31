@@ -30,6 +30,8 @@ const openPosition: PositionRow = {
   feesLamports: 205_000n,
   realizedPnlLamports: 0n,
   closeReason: null,
+  lastValueLamports: null,
+  lastValuedAt: null,
   openedAt: new Date(NOW.getTime() - 30 * 60_000),
   closedAt: null,
   createdAt: NOW,

@@ -44,6 +44,8 @@ function position(id: number, tokenMint: string): PositionRow {
     feesLamports: 205_000n,
     realizedPnlLamports: 0n,
     closeReason: null,
+    lastValueLamports: null,
+    lastValuedAt: null,
     openedAt: OPENED_AT,
     closedAt: null,
     createdAt: OPENED_AT,
@@ -92,7 +94,7 @@ function setup(sellOut: (mint: string) => bigint | null | Error) {
       now,
     }),
     locks,
-    limits,
+    limits: () => limits,
     priorityFeeLamports: 200_000n,
     now,
     events,
@@ -147,6 +149,33 @@ describe('createPositionMonitor', () => {
       netValueLamports: 60_000_000n - 205_000n,
       remainingCostLamports: 50_000_000n,
     });
+  });
+
+  it('saves every valuation it computes, null when there is no route', async () => {
+    const { monitor, store } = setup(() => 60_000_000n);
+    store.positions.push(position(1, MINT_A));
+    await monitor.runOnce();
+    expect(store.valuations).toEqual([
+      {
+        positionId: 1,
+        tokenAmountRaw: 1_000_000_000n,
+        netValueLamports: 60_000_000n - 205_000n,
+        at: expect.any(Date) as Date,
+      },
+    ]);
+
+    const noRoute = setup(() => null);
+    noRoute.store.positions.push(position(1, MINT_A));
+    await noRoute.monitor.runOnce();
+    expect(noRoute.store.valuations[0]?.netValueLamports).toBeNull();
+  });
+
+  it('still takes profit when saving the valuation fails', async () => {
+    const { monitor, store } = setup(() => 101_000_000n);
+    store.savePositionValuation = () => Promise.reject(new Error('db down'));
+    store.positions.push(position(1, MINT_A));
+    await monitor.runOnce();
+    expect(store.positions[0]?.closeReason).toBe('take_profit');
   });
 
   it('stops the loss and exits at max hold', async () => {

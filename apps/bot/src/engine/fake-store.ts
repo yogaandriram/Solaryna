@@ -1,5 +1,5 @@
 import type { NewSignal, NewTrade, PositionRow } from '@solaryna/db';
-import type { TradingStore } from './store';
+import type { PositionValuationInput, TradingStore } from './store';
 
 // In-memory TradingStore for tests (engine, monitor, Telegram commands). Not used at runtime.
 
@@ -12,6 +12,7 @@ export interface FakeTradingStore extends TradingStore {
   cooldowns: Map<number, Date>;
   blacklist: Set<string>;
   marketData: unknown[];
+  valuations: PositionValuationInput[];
 }
 
 export function createFakeTradingStore(): FakeTradingStore {
@@ -24,6 +25,7 @@ export function createFakeTradingStore(): FakeTradingStore {
     cooldowns: new Map(),
     blacklist: new Set(),
     marketData: [],
+    valuations: [],
 
     isTradingPaused: () => Promise.resolve(store.settings.get('trading_paused') === true),
     setTradingPaused(paused, audit) {
@@ -57,6 +59,8 @@ export function createFakeTradingStore(): FakeTradingStore {
         realizedPnlLamports: null,
         closeReason: null,
         closedAt: null,
+        lastValueLamports: null,
+        lastValuedAt: null,
         createdAt: now,
         updatedAt: now,
         ...input.position,
@@ -108,6 +112,17 @@ export function createFakeTradingStore(): FakeTradingStore {
       store.marketData.push(input);
       return Promise.resolve();
     },
+    savePositionValuation(input) {
+      store.valuations.push(input);
+      const position = store.positions.find((p) => p.id === input.positionId);
+      if (position?.status !== 'open' || position.tokenAmountRaw !== input.tokenAmountRaw) {
+        return Promise.resolve(false);
+      }
+      position.lastValueLamports = input.netValueLamports;
+      position.lastValuedAt = input.at;
+      return Promise.resolve(true);
+    },
+    getRiskLimitOverrides: () => Promise.resolve(store.settings.get('risk_limits') ?? null),
   };
   return store;
 }

@@ -32,7 +32,8 @@ export interface EngineDeps {
   executor: Executor;
   jupiter: Pick<JupiterClient, 'getToken'>;
   locks: KeyedMutex;
-  limits: RiskLimits;
+  /** Read once per signal: the dashboard can tighten them at runtime. */
+  limits: () => RiskLimits;
   displayTimeZone: string;
   now: () => Date;
   sleep: (ms: number) => Promise<void>;
@@ -60,7 +61,7 @@ const errorText = (error: unknown) =>
  * wallet that opened the position, in proportion. Every signal is stored with its decision.
  */
 export function createEngine(deps: EngineDeps): Engine {
-  const { store, executor, limits } = deps;
+  const { store, executor } = deps;
   const mode = executor.mode;
   /**
    * Tokens with a buy in flight: they count as held and as open positions. A sell by the same
@@ -107,6 +108,7 @@ export function createEngine(deps: EngineDeps): Engine {
     wallet: TrackedWalletInfo,
     context: NewSwapContext,
   ): Promise<SignalOutcome> {
+    const limits = deps.limits();
     const token = event.tokenMint;
     // Claimed synchronously, before any await, so a simultaneous buy of the same token sees it.
     const claimed = !pendingBuys.has(token);
@@ -311,6 +313,7 @@ export function createEngine(deps: EngineDeps): Engine {
     wallet: TrackedWalletInfo,
     context: NewSwapContext,
   ): Promise<SignalOutcome> {
+    const limits = deps.limits();
     const token = event.tokenMint;
     const riskInputs: Record<string, unknown> = {
       walletSoldRaw: event.tokenAmountRaw.toString(),

@@ -86,12 +86,16 @@ function setup(options: { limits?: Partial<RiskLimits>; market?: Partial<TokenMa
     positionClosed: vi.fn<TradingEvents['positionClosed']>(),
     executionError: vi.fn<TradingEvents['executionError']>(),
   };
+  let currentLimits: RiskLimits = { ...limits, ...options.limits };
+  const setLimits = (changes: Partial<RiskLimits>) => {
+    currentLimits = { ...currentLimits, ...changes };
+  };
   const engine = createEngine({
     store,
     executor,
     jupiter: { getToken },
     locks: createKeyedMutex(),
-    limits: { ...limits, ...options.limits },
+    limits: () => currentLimits,
     displayTimeZone: 'Asia/Jakarta',
     now,
     sleep,
@@ -128,7 +132,7 @@ function setup(options: { limits?: Partial<RiskLimits>; market?: Partial<TokenMa
     ];
   }
 
-  return { engine, store, sleep, onSleep, getToken, getOrder, events, swap, now };
+  return { engine, store, sleep, onSleep, getToken, getOrder, events, swap, now, setLimits };
 }
 
 const codes = (outcome: SignalOutcome) =>
@@ -243,6 +247,15 @@ describe('engine: buy signals', () => {
       engine.handleSwap(...swap(WALLET_B, 'buy', { tokenMint: MINT_B })),
     ]);
     expect(outcomes.flatMap(codes)).toEqual(['max_open_positions']);
+    expect(store.positions).toHaveLength(1);
+  });
+
+  it('reads the runtime limits again for every signal', async () => {
+    const { engine, store, swap, setLimits } = setup();
+    await engine.handleSwap(...swap(WALLET_A, 'buy', { tokenMint: MINT_A }));
+    setLimits({ maxOpenPositions: 1 });
+    const second = await engine.handleSwap(...swap(WALLET_B, 'buy', { tokenMint: MINT_B }));
+    expect(codes(second)).toEqual(['max_open_positions']);
     expect(store.positions).toHaveLength(1);
   });
 
