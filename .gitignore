@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Personal wallet lists for scripts/import-wallets.ts
+wallets*.txt
+
 # Dependencies & build output
 node_modules/
 dist/

@@ -4,7 +4,15 @@ export type TradingMode = (typeof TRADING_MODES)[number];
 export const SWAP_SIDES = ['buy', 'sell'] as const;
 export type SwapSide = (typeof SWAP_SIDES)[number];
 
-export const SWAP_SOURCES = ['pumpfun', 'raydium', 'meteora', 'jupiter', 'unknown'] as const;
+export const SWAP_SOURCES = [
+  'pumpfun',
+  'pumpswap',
+  'raydium',
+  'meteora',
+  'orca',
+  'jupiter',
+  'unknown',
+] as const;
 export type SwapSource = (typeof SWAP_SOURCES)[number];
 
 /**

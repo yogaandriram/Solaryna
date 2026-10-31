@@ -1,4 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Tests read fixtures with node:fs. Source files are kept I/O-free by ESLint
+    // (no-restricted-imports/globals/syntax in eslint.config.js), not by missing types.
+    "types": ["node"]
+  },
   "include": ["src", "test"]
 }

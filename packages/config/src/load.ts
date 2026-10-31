@@ -6,7 +6,6 @@ import type { TradingModeRequest } from './trading-mode';
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
 export type NodeEnv = 'development' | 'test' | 'production';
-export type IngestSource = 'webhook' | 'websocket';
 
 /** Thrown when the environment is invalid. The message lists keys and problems, never values. */
 export class ConfigError extends Error {
@@ -56,11 +55,16 @@ export interface BotConfig {
   displayTimeZone: string;
   databaseUrl: Secret;
   ingest: {
-    source: IngestSource;
     heliusApiKey: Secret;
-    heliusWebhookSecret: Secret | null;
+    /** Helius RPC URL; the API key is in its query string. */
     solanaRpcUrl: Secret;
-  };
+  } & (
+    | {
+        source: 'webhook';
+        webhook: { id: string; secret: Secret; host: string; port: number };
+      }
+    | { source: 'websocket' }
+  );
   birdeye: { apiKey: Secret };
   jupiter: { apiKey: Secret };
   telegram: { botToken: Secret; allowedChatIds: readonly number[] };
@@ -81,12 +85,7 @@ export function loadBotConfig(env: EnvSource): BotConfig {
     nodeEnv: e.NODE_ENV,
     displayTimeZone: e.TZ_DISPLAY,
     databaseUrl: e.DATABASE_URL,
-    ingest: {
-      source: e.INGEST_SOURCE,
-      heliusApiKey: e.HELIUS_API_KEY,
-      heliusWebhookSecret: e.HELIUS_WEBHOOK_SECRET,
-      solanaRpcUrl: e.SOLANA_RPC_URL,
-    },
+    ingest: ingestConfig(e),
     birdeye: { apiKey: e.BIRDEYE_API_KEY },
     jupiter: { apiKey: e.JUPITER_API_KEY },
     telegram: { botToken: e.TELEGRAM_BOT_TOKEN, allowedChatIds: e.TELEGRAM_ALLOWED_CHAT_IDS },
@@ -106,6 +105,27 @@ export function loadBotConfig(env: EnvSource): BotConfig {
       takeProfitPct: e.TAKE_PROFIT_PCT,
       stopLossPct: e.STOP_LOSS_PCT,
       maxHoldMinutes: e.MAX_HOLD_MINUTES,
+    },
+  };
+}
+
+function ingestConfig(e: z.output<typeof botEnvSchema>): BotConfig['ingest'] {
+  const common = { heliusApiKey: e.HELIUS_API_KEY, solanaRpcUrl: e.SOLANA_RPC_URL };
+  if (e.INGEST_SOURCE === 'websocket') {
+    return { ...common, source: 'websocket' };
+  }
+  // Guaranteed by the schema refinements; checked again so the types follow.
+  if (e.HELIUS_WEBHOOK_ID === null || e.HELIUS_WEBHOOK_SECRET === null) {
+    throw new ConfigError(['HELIUS_WEBHOOK_ID/HELIUS_WEBHOOK_SECRET: wajib diisi']);
+  }
+  return {
+    ...common,
+    source: 'webhook',
+    webhook: {
+      id: e.HELIUS_WEBHOOK_ID,
+      secret: e.HELIUS_WEBHOOK_SECRET,
+      host: e.WEBHOOK_HOST,
+      port: e.WEBHOOK_PORT,
     },
   };
 }

@@ -146,7 +146,26 @@ export const botEnvSchema = z
     ...commonEnvShape,
 
     HELIUS_API_KEY: requiredSecret(),
-    HELIUS_WEBHOOK_SECRET: optionalSecret(),
+    HELIUS_WEBHOOK_SECRET: env(
+      z
+        .string()
+        .min(16, { error: 'minimal 16 karakter' })
+        .optional()
+        .transform((value) => (value === undefined ? null : new Secret(value))),
+    ),
+    // Created by the user in the Helius dashboard (type "raw"); the bot only syncs its addresses.
+    HELIUS_WEBHOOK_ID: env(
+      z
+        .string()
+        .regex(/^[A-Za-z0-9_-]{1,64}$/, { error: 'format webhook ID tidak valid' })
+        .optional()
+        .transform((value) => value ?? null),
+    ),
+    WEBHOOK_HOST: env(
+      z.string().regex(/^[A-Za-z0-9.:-]+$/, { error: 'harus hostname atau alamat IP' }),
+      '127.0.0.1',
+    ),
+    WEBHOOK_PORT: env(integer(1, 65_535), '8787'),
     // Helius RPC URLs carry the API key in the query string, so the URL itself is a secret.
     SOLANA_RPC_URL: env(httpUrl.transform(toSecret)),
     INGEST_SOURCE: env(
@@ -175,15 +194,24 @@ export const botEnvSchema = z
     STOP_LOSS_PCT: env(decimalInRange({ min: '0', max: '100', minExclusive: true }), '30'),
     MAX_HOLD_MINUTES: env(integer(1, 43_200), '240'),
   })
-  .refine((parsed) => parsed.INGEST_SOURCE !== 'webhook' || parsed.HELIUS_WEBHOOK_SECRET !== null, {
-    path: ['HELIUS_WEBHOOK_SECRET'],
+  .refine(
+    (parsed) => parsed.INGEST_SOURCE !== 'webhook' || parsed.HELIUS_WEBHOOK_SECRET !== null,
+    requiredForWebhook('HELIUS_WEBHOOK_SECRET'),
+  )
+  .refine(
+    (parsed) => parsed.INGEST_SOURCE !== 'webhook' || parsed.HELIUS_WEBHOOK_ID !== null,
+    requiredForWebhook('HELIUS_WEBHOOK_ID'),
+  );
+
+function requiredForWebhook(key: string) {
+  return {
+    path: [key],
     error: 'wajib diisi jika INGEST_SOURCE=webhook',
     // Run even when unrelated keys are invalid, so every problem is reported in one go.
-    when: (payload) =>
-      payload.issues.every(
-        (issue) => !['INGEST_SOURCE', 'HELIUS_WEBHOOK_SECRET'].includes(String(issue.path?.[0])),
-      ),
-  });
+    when: (payload: { issues: readonly { path?: readonly PropertyKey[] }[] }) =>
+      payload.issues.every((issue) => !['INGEST_SOURCE', key].includes(String(issue.path?.[0]))),
+  };
+}
 
 export const webEnvSchema = z.object({
   ...commonEnvShape,

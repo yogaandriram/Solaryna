@@ -13,7 +13,7 @@ Sistem punya dua alur:
 2. **Copy trade real-time (terus-menerus)**
    Wallet incaran swap → Helius webhook → normalisasi jadi `SwapEvent` → mesin aturan risiko → mode **paper** (simulasi) atau **live** (swap via Jupiter) → notifikasi Telegram + catat ke database → tampil di dashboard.
 
-**Status:** M0 (scaffold) selesai; berikutnya M1. Bangun bertahap mengikuti bagian **Milestone**. Jangan loncat ke mode live sebelum milestone paper trading selesai dan teruji.
+**Status:** M0 (scaffold) selesai; M1 (ingest + alert) kodenya selesai, menunggu uji integrasi database dan uji end-to-end oleh pengguna. Bangun bertahap mengikuti bagian **Milestone**. Jangan loncat ke mode live sebelum milestone paper trading selesai dan teruji.
 
 ## Bahasa
 
@@ -84,6 +84,8 @@ npm run dev:bot             # jalankan bot (mode sesuai TRADING_MODE, default pa
 npm run db:create           # buat database dari DATABASE_URL (utf8mb4) jika belum ada
 npm run db:generate         # buat file migrasi dari skema Drizzle (packages/db/migrations)
 npm run db:migrate          # terapkan migrasi ke MySQL
+npm run wallets:import -- wallets.txt          # impor wallet incaran dari file teks
+npm run fixture:fetch -- <signature> <nama>    # simpan tx mainnet sebagai fixture parser
 npm run test                # vitest semua workspace
 npm run typecheck           # tsc --noEmit semua workspace
 npm run lint                # ESLint
@@ -103,6 +105,15 @@ Catatan implementasi M0 yang perlu dijaga:
 - Kolom alamat/mint/signature memakai `base58()` (`ascii_bin`, case-sensitive); jumlah mentah memakai `rawAmount()` (`DECIMAL(40,0)` ⇄ `bigint`); waktu memakai `utcDatetime()`. Client DB men-set session `time_zone = '+00:00'`.
 - `LIVE_EXECUTOR_AVAILABLE` di `apps/bot/src/main.ts` tetap `false` sampai M5 selesai; selama itu `resolveTradingMode` selalu jatuh ke paper.
 - ESLint memblokir import I/O, `fetch`, `process`, `Date.now()`/`new Date()` tanpa argumen, dan `Math.random()` di `packages/core/src`.
+
+Catatan implementasi M1 yang perlu dijaga:
+- Mainnet sudah memakai **transaksi v1**: setiap `getTransaction` wajib `maxSupportedTransactionVersion: 1`. Daftar akun lengkap = `accountKeys` + `loadedAddresses.writable` + `loadedAddresses.readonly`.
+- Parser swap (`packages/core/src/swap`) berbasis selisih saldo: wallet harus signer; quote SOL = selisih native + fee (jika fee payer) + selisih WSOL + koreksi rent akun token yang dibuat/ditutup; tepat satu mint non-quote boleh berubah. Ubah hanya bersama fixture test.
+- Webhook Helius bertipe **raw** dibuat pengguna di dashboard; bot hanya mengelola `accountAddresses` dan `authHeader` (GET lalu PUT, hanya bila berubah — tiap edit memakai kredit). Bot gagal start jika webhook bukan raw.
+- Sumber websocket memakai `logsSubscribe` standar (satu langganan per wallet), lalu `getTransaction` dengan retry; `transactionSubscribe` butuh paket berbayar.
+- Perubahan wallet lewat Telegram/skrip ditulis ke `audit_log` di transaksi DB yang sama (`addManualWallet`/`deactivateWallet` dengan argumen actor).
+- Logger bot menerima daftar `Secret` dari config dan men-scrub nilainya dari semua log, termasuk pesan error HTTP. Error setelah logger dibuat harus lewat logger, bukan `console`.
+- Escape semua teks on-chain/label dengan `escapeHtml` sebelum dikirim ke Telegram; label & nama token disanitasi dengan `sanitizeDisplayText` sebelum disimpan.
 
 Sebelum menyatakan pekerjaan selesai: jalankan `npm run typecheck`, `npm run lint`, dan `npm run test`, lalu laporkan hasilnya apa adanya.
 
@@ -125,9 +136,12 @@ DATABASE_URL=mysql://root:@127.0.0.1:3306/solaryna
 
 # Data on-chain
 HELIUS_API_KEY=
-HELIUS_WEBHOOK_SECRET=          # dicocokkan dengan header Authorization dari Helius
 SOLANA_RPC_URL=                 # RPC Helius, bukan RPC publik, untuk kirim transaksi
 INGEST_SOURCE=webhook           # webhook | websocket
+HELIUS_WEBHOOK_ID=              # webhook raw buatan pengguna; wajib jika INGEST_SOURCE=webhook
+HELIUS_WEBHOOK_SECRET=          # min. 16 karakter; dipasang sebagai authHeader & dicocokkan dengan header Authorization
+WEBHOOK_HOST=127.0.0.1          # server penerima webhook, path /webhooks/helius
+WEBHOOK_PORT=8787
 BIRDEYE_API_KEY=
 
 # Jupiter

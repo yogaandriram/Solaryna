@@ -4,7 +4,8 @@ import { ConfigError, loadBotConfig, loadDatabaseConfig, loadWebConfig } from '.
 const validBotEnv = {
   DATABASE_URL: 'mysql://root:@127.0.0.1:3306/solaryna',
   HELIUS_API_KEY: 'test-helius-key',
-  HELIUS_WEBHOOK_SECRET: 'test-webhook-secret',
+  HELIUS_WEBHOOK_SECRET: 'test-webhook-secret-123',
+  HELIUS_WEBHOOK_ID: 'a1b2c3d4-0000-4000-8000-000000000000',
   SOLANA_RPC_URL: 'https://rpc.example.test/?api-key=test-rpc-key',
   BIRDEYE_API_KEY: 'test-birdeye-key',
   JUPITER_API_KEY: 'test-jupiter-key',
@@ -70,15 +71,28 @@ describe('loadBotConfig', () => {
     );
   });
 
-  it('requires HELIUS_WEBHOOK_SECRET only for the webhook ingest source', () => {
-    const withoutSecret = { ...validBotEnv, HELIUS_WEBHOOK_SECRET: '' };
-    expect(configError(() => loadBotConfig(withoutSecret)).issues).toEqual([
+  it('builds the webhook settings with defaults for host and port', () => {
+    const { ingest } = loadBotConfig(validBotEnv);
+    expect(ingest.source).toBe('webhook');
+    if (ingest.source === 'webhook') {
+      expect(ingest.webhook).toMatchObject({
+        id: validBotEnv.HELIUS_WEBHOOK_ID,
+        host: '127.0.0.1',
+        port: 8787,
+      });
+      expect(ingest.webhook.secret.reveal()).toBe(validBotEnv.HELIUS_WEBHOOK_SECRET);
+    }
+  });
+
+  it('requires the webhook secret and ID only for the webhook ingest source', () => {
+    const withoutWebhook = { ...validBotEnv, HELIUS_WEBHOOK_SECRET: '', HELIUS_WEBHOOK_ID: '' };
+    expect(configError(() => loadBotConfig(withoutWebhook)).issues).toEqual([
       'HELIUS_WEBHOOK_SECRET: wajib diisi jika INGEST_SOURCE=webhook',
+      'HELIUS_WEBHOOK_ID: wajib diisi jika INGEST_SOURCE=webhook',
     ]);
-    expect(loadBotConfig({ ...withoutSecret, INGEST_SOURCE: 'websocket' }).ingest).toMatchObject({
-      source: 'websocket',
-      heliusWebhookSecret: null,
-    });
+    expect(loadBotConfig({ ...withoutWebhook, INGEST_SOURCE: 'websocket' }).ingest.source).toBe(
+      'websocket',
+    );
   });
 
   it('reports the missing webhook secret together with other problems', () => {
@@ -89,6 +103,16 @@ describe('loadBotConfig', () => {
       'JUPITER_API_KEY: wajib diisi',
       'HELIUS_WEBHOOK_SECRET: wajib diisi jika INGEST_SOURCE=webhook',
     ]);
+  });
+
+  it('rejects short webhook secrets and unsafe webhook IDs', () => {
+    expect(
+      configError(() => loadBotConfig({ ...validBotEnv, HELIUS_WEBHOOK_SECRET: 'short' })).issues,
+    ).toEqual(['HELIUS_WEBHOOK_SECRET: minimal 16 karakter']);
+    expect(() => loadBotConfig({ ...validBotEnv, HELIUS_WEBHOOK_ID: '../../v0/x' })).toThrow(
+      ConfigError,
+    );
+    expect(() => loadBotConfig({ ...validBotEnv, WEBHOOK_PORT: '70000' })).toThrow(ConfigError);
   });
 
   it('never includes secret values in errors', () => {

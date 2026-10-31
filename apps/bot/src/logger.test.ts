@@ -2,16 +2,49 @@ import { Secret } from '@solaryna/config';
 import { describe, expect, it } from 'vitest';
 import { createLogger } from './logger';
 
+const BOT_TOKEN = '123456789:AAH-fake-telegram-token';
+const RPC_URL = 'https://mainnet.helius-rpc.com/?api-key=fake-helius-key-0001';
+
 function captureLogs() {
   const lines: string[] = [];
   const logger = createLogger({
     level: 'debug',
     destination: { write: (line) => lines.push(line) },
+    secrets: [new Secret(BOT_TOKEN), new Secret(RPC_URL), new Secret('short')],
   });
   return { logger, output: () => lines.join('') };
 }
 
 describe('createLogger', () => {
+  it('scrubs secret values embedded in error messages, stacks, and causes', () => {
+    const { logger, output } = captureLogs();
+    const error = new Error(`request to https://api.telegram.org/bot${BOT_TOKEN}/getMe failed`, {
+      cause: new Error(`connect to ${RPC_URL} refused`),
+    });
+    logger.error({ err: error }, `Failed: ${BOT_TOKEN}`);
+    expect(output()).not.toContain(BOT_TOKEN);
+    expect(output()).not.toContain('fake-helius-key-0001');
+    expect(output()).toContain('getMe failed');
+  });
+
+  it('keeps the error class name', () => {
+    const { logger, output } = captureLogs();
+    class HeliusApiError extends Error {
+      override name = 'HeliusApiError';
+    }
+    logger.error({ err: new HeliusApiError('HTTP 401') }, 'failed');
+    const line = JSON.parse(output()) as { err: { type: string; message: string } };
+    expect(line.err).toMatchObject({ type: 'HeliusApiError', message: 'HTTP 401' });
+  });
+
+  it('scrubs secrets from free-form fields and leaves short values alone', () => {
+    const { logger, output } = captureLogs();
+    logger.info({ detail: { url: RPC_URL }, list: [`x ${BOT_TOKEN}`], note: 'short' });
+    expect(output()).not.toContain('fake-helius-key-0001');
+    expect(output()).not.toContain(BOT_TOKEN);
+    expect(output()).toContain('"note":"short"');
+  });
+
   it('redacts secret env keys at the top level and nested', () => {
     const { logger, output } = captureLogs();
     logger.info({
