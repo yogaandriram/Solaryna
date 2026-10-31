@@ -48,6 +48,8 @@ export interface RiskLimits {
   takeProfitPct: Decimal;
   stopLossPct: Decimal;
   maxHoldMinutes: number;
+  /** Buy signals older than this (from the swap block time) are rejected. */
+  maxSignalAgeSeconds: number;
 }
 
 export interface BotConfig {
@@ -105,6 +107,7 @@ export function loadBotConfig(env: EnvSource): BotConfig {
       takeProfitPct: e.TAKE_PROFIT_PCT,
       stopLossPct: e.STOP_LOSS_PCT,
       maxHoldMinutes: e.MAX_HOLD_MINUTES,
+      maxSignalAgeSeconds: e.MAX_SIGNAL_AGE_SECONDS,
     },
   };
 }

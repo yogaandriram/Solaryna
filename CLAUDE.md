@@ -170,6 +170,7 @@ COPY_DELAY_MS=3000              # jeda yang disimulasikan di paper trading
 TAKE_PROFIT_PCT=100
 STOP_LOSS_PCT=30
 MAX_HOLD_MINUTES=240
+MAX_SIGNAL_AGE_SECONDS=30       # sinyal beli lebih tua dari ini (sejak swap wallet) ditolak
 ```
 
 ## Aturan keamanan (wajib)

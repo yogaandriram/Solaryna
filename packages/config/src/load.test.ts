@@ -49,6 +49,15 @@ describe('loadBotConfig', () => {
     expect(config.risk.maxHoldMinutes).toBe(240);
   });
 
+  it('defaults MAX_SIGNAL_AGE_SECONDS to 30 and rejects 0', () => {
+    expect(loadBotConfig(validBotEnv).risk.maxSignalAgeSeconds).toBe(30);
+    expect(loadBotConfig({ ...validBotEnv, MAX_SIGNAL_AGE_SECONDS: '90' }).risk).toMatchObject({
+      maxSignalAgeSeconds: 90,
+    });
+    const error = configError(() => loadBotConfig({ ...validBotEnv, MAX_SIGNAL_AGE_SECONDS: '0' }));
+    expect(error.issues.some((issue) => issue.startsWith('MAX_SIGNAL_AGE_SECONDS'))).toBe(true);
+  });
+
   it('treats blank values as unset', () => {
     const config = loadBotConfig({ ...validBotEnv, TRADING_MODE: '   ', MAX_OPEN_POSITIONS: '' });
     expect(config.trading.requestedMode).toBe('paper');

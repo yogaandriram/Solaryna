@@ -5,3 +5,6 @@ export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 export const SOL_DECIMALS = 9;
 export const USDC_DECIMALS = 6;
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
+
+/** Base network fee of a transaction with one signature. */
+export const BASE_NETWORK_FEE_LAMPORTS = 5000n;

@@ -193,6 +193,7 @@ export const botEnvSchema = z
     TAKE_PROFIT_PCT: env(decimalInRange({ min: '0', minExclusive: true }), '100'),
     STOP_LOSS_PCT: env(decimalInRange({ min: '0', max: '100', minExclusive: true }), '30'),
     MAX_HOLD_MINUTES: env(integer(1, 43_200), '240'),
+    MAX_SIGNAL_AGE_SECONDS: env(integer(1, 3600), '30'),
   })
   .refine(
     (parsed) => parsed.INGEST_SOURCE !== 'webhook' || parsed.HELIUS_WEBHOOK_SECRET !== null,
