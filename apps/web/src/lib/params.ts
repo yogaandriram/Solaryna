@@ -53,6 +53,13 @@ export function parsePositionsTab(value: unknown): PositionsTab {
   return tab === 'closed' || tab === 'trades' ? tab : 'open';
 }
 
+export type WalletStatusFilter = 'all' | 'active' | 'inactive';
+
+export function parseWalletStatus(value: unknown): WalletStatusFilter {
+  const status = first(value);
+  return status === 'active' || status === 'inactive' ? status : 'all';
+}
+
 /** Fetches one row more than a page so the page can tell whether a next one exists. */
 export const pageToOffset = (page: number): Page => ({
   limit: PAGE_SIZE + 1,

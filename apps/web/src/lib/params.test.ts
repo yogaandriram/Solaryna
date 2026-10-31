@@ -7,6 +7,7 @@ import {
   parsePage,
   parsePositionsTab,
   parseSignalFilter,
+  parseWalletStatus,
   splitPage,
   withParams,
 } from './params';
@@ -89,5 +90,14 @@ describe('parsePositionsTab', () => {
     expect(parsePositionsTab('trades')).toBe('trades');
     expect(parsePositionsTab('x')).toBe('open');
     expect(parsePositionsTab(undefined)).toBe('open');
+  });
+});
+
+describe('parseWalletStatus', () => {
+  it('defaults to all wallets', () => {
+    expect(parseWalletStatus('active')).toBe('active');
+    expect(parseWalletStatus('inactive')).toBe('inactive');
+    expect(parseWalletStatus('zzz')).toBe('all');
+    expect(parseWalletStatus(undefined)).toBe('all');
   });
 });
