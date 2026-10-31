@@ -1,1 +1,62 @@
 @import 'tailwindcss';
+
+/* Semantic color tokens; dark mode follows the system. Used as bg-surface, text-muted, … */
+:root {
+  color-scheme: light dark;
+  --canvas: #f5f6f8;
+  --surface: #ffffff;
+  --surface-muted: #eef0f3;
+  --line: #dfe3e8;
+  --fg: #15181d;
+  --muted: #5c6470;
+  --accent: #4f46e5;
+  --accent-fg: #ffffff;
+  --positive: #0d7a4c;
+  --negative: #c0342b;
+  --paper: #a35208;
+  --paper-soft: #fdf0d5;
+  --live: #b91c1c;
+  --live-soft: #fde4e4;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #0c0f14;
+    --surface: #141921;
+    --surface-muted: #1b212a;
+    --line: #29303b;
+    --fg: #e6e9ed;
+    --muted: #96a0ad;
+    --accent: #8b93f8;
+    --accent-fg: #0c0f14;
+    --positive: #3cc68f;
+    --negative: #f2736c;
+    --paper: #f5b83d;
+    --paper-soft: #392a0c;
+    --live: #f87171;
+    --live-soft: #3a1515;
+  }
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-paper: var(--paper);
+  --color-paper-soft: var(--paper-soft);
+  --color-live: var(--live);
+  --color-live-soft: var(--live-soft);
+}
+
+body {
+  background: var(--canvas);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+}

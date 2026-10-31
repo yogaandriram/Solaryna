@@ -6,7 +6,8 @@ import type { EnvSource } from './load';
 
 /** Walks up from `startDir` to the directory whose package.json declares npm workspaces. */
 export function findWorkspaceRoot(startDir: string = process.cwd()): string | null {
-  let dir = path.resolve(startDir);
+  // Resolved at runtime on purpose; without the hint Turbopack traces the whole project.
+  let dir = path.resolve(/*turbopackIgnore: true*/ startDir);
   for (;;) {
     const packageJsonPath = path.join(dir, 'package.json');
     if (existsSync(packageJsonPath)) {
