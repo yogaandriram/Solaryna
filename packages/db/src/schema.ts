@@ -1,4 +1,10 @@
-import { SWAP_SIDES, TRADING_MODES } from '@solaryna/core';
+import {
+  CLOSE_REASONS,
+  SWAP_SIDES,
+  TRADE_REASONS,
+  TRADING_MODES,
+  type RiskReason,
+} from '@solaryna/core';
 import {
   bigint,
   boolean,
@@ -127,7 +133,11 @@ export const signals = mysqlTable(
       .references(() => trackedWallets.id),
     mode: tradingMode().notNull(),
     decision: mysqlEnum('decision', ['accepted', 'rejected']).notNull(),
-    reasons: json('reasons').$type<string[]>().notNull(),
+    reasons: json('reasons').$type<RiskReason[]>().notNull(),
+    /** Snapshot of the risk inputs (liquidity, authorities, limits…); JSON, bigints as strings. */
+    riskInputs: json('risk_inputs'),
+    /** When the bot received the swap (the copy delay is measured from here). */
+    receivedAt: utcDatetime('received_at'),
     createdAt: createdAt(),
   },
   (t) => [
@@ -147,18 +157,14 @@ export const positions = mysqlTable(
     tokenDecimals: decimals('token_decimals').notNull(),
     trackedWalletId: idRef('tracked_wallet_id').references(() => trackedWallets.id),
     openedFromSignalId: idRef('opened_from_signal_id').references(() => signals.id),
+    /** Tokens bought; partial sells realize cost in proportion to it. */
+    initialTokenAmountRaw: rawAmount('initial_token_amount_raw').notNull(),
     tokenAmountRaw: rawAmount('token_amount_raw').notNull(),
     costLamports: rawAmount('cost_lamports').notNull(),
     proceedsLamports: rawAmount('proceeds_lamports').notNull(),
     feesLamports: rawAmount('fees_lamports').notNull(),
     realizedPnlLamports: rawAmount('realized_pnl_lamports'),
-    closeReason: mysqlEnum('close_reason', [
-      'follow_sell',
-      'take_profit',
-      'stop_loss',
-      'max_hold',
-      'manual',
-    ]),
+    closeReason: mysqlEnum('close_reason', CLOSE_REASONS),
     openedAt: utcDatetime('opened_at').notNull(),
     closedAt: utcDatetime('closed_at'),
     createdAt: createdAt(),
@@ -182,6 +188,7 @@ export const trades = mysqlTable(
     signalId: idRef('signal_id').references(() => signals.id),
     mode: tradingMode().notNull(),
     side: mysqlEnum('side', SWAP_SIDES).notNull(),
+    reason: mysqlEnum('reason', TRADE_REASONS).notNull(),
     status: mysqlEnum('status', ['simulated', 'pending', 'confirmed', 'failed']).notNull(),
     tokenMint: address('token_mint').notNull(),
     tokenAmountRaw: rawAmount('token_amount_raw').notNull(),
@@ -193,6 +200,11 @@ export const trades = mysqlTable(
     priorityFeeLamports: rawAmount('priority_fee_lamports').notNull(),
     dexFeeLamports: rawAmount('dex_fee_lamports').notNull(),
     slippageBps: int('slippage_bps'),
+    /** Net PnL this trade realized (sells only). */
+    realizedPnlLamports: rawAmount('realized_pnl_lamports'),
+    /** SOL price in USD implied by the quote, to compare with wallets trading in USDC. */
+    solUsdPrice: decimal('sol_usd_price', { precision: 30, scale: 12 }),
+    quotedAt: utcDatetime('quoted_at'),
     txSignature: signature('tx_signature'),
     /** Snapshot of the Jupiter quote the trade was based on. */
     quote: json('quote'),

@@ -1,8 +1,6 @@
 import { WSOL_MINT, type SwapEvent } from '@solaryna/core';
 import { sql } from 'drizzle-orm';
-import { migrate } from 'drizzle-orm/mysql2/migrator';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createDb } from './client';
+import { describe, expect, it } from 'vitest';
 import {
   addManualWallet,
   deactivateWallet,
@@ -13,48 +11,11 @@ import {
   listActiveWallets,
   upsertTokenMetadata,
 } from './queries';
+import { TEST_DATABASE_URL, useTestDatabase } from './test-db';
 
-// Runs against a real MySQL database, e.g.
-//   TEST_DATABASE_URL=mysql://root:@127.0.0.1:3306/solaryna_test npm run test
-// The database must exist (npm run db:create with that URL); it is migrated and wiped here.
-const url = process.env.TEST_DATABASE_URL;
-
-describe.skipIf(url === undefined)('queries (MySQL)', () => {
-  const database = createDb(url ?? '');
-  const { db } = database;
+describe.skipIf(TEST_DATABASE_URL === undefined)('queries (MySQL)', () => {
+  const { db } = useTestDatabase();
   const wallet = 'J8M2wM8vtBLZJfajpczrjbs78PWhW1sqVFVJdE5d43jX';
-
-  beforeAll(async () => {
-    if (!/\/[A-Za-z0-9_]*test[A-Za-z0-9_]*$/.test(new URL(url ?? '').pathname)) {
-      throw new Error('TEST_DATABASE_URL must point to a database whose name contains "test"');
-    }
-    await migrate(db, {
-      migrationsFolder: new URL('../migrations', import.meta.url).pathname.replace(
-        /^\/(\w:)/,
-        '$1',
-      ),
-    });
-  });
-
-  beforeEach(async () => {
-    for (const table of [
-      'trades',
-      'positions',
-      'signals',
-      'swap_events',
-      'wallet_scores',
-      'tokens',
-      'settings',
-      'audit_log',
-      'tracked_wallets',
-    ]) {
-      await db.execute(sql.raw(`DELETE FROM \`${table}\``));
-    }
-  });
-
-  afterAll(async () => {
-    await database.close();
-  });
 
   it('adds, reactivates, and deactivates manual wallets', async () => {
     expect((await addManualWallet(db, { address: wallet, label: 'alpha' })).status).toBe('added');

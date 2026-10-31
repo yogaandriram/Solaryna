@@ -8,6 +8,13 @@
       "when": 1793375982805,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1793428163829,
+      "tag": "0001_m2_paper_trading",
+      "breakpoints": true
     }
   ]
 }
