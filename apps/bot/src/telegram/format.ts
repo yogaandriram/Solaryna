@@ -76,6 +76,8 @@ export interface StartupInfo {
   fallbackReasons: readonly string[];
   ingestSource: 'webhook' | 'websocket';
   walletCount: number;
+  /** Kill switch state at startup. */
+  paused: boolean;
 }
 
 export function formatStartupMessage(info: StartupInfo): string {
@@ -86,7 +88,9 @@ export function formatStartupMessage(info: StartupInfo): string {
       : 'Mode: <b>PAPER</b> (simulasi, tanpa transaksi nyata)',
     `Sumber event: ${info.ingestSource === 'webhook' ? 'webhook Helius' : 'websocket (development)'}`,
     `Wallet incaran aktif: ${info.walletCount}`,
-    'Versi ini baru mengirim alert; eksekusi trade belum aktif.',
+    info.paused
+      ? 'Status: ⏸ trading dijeda — /resume untuk melanjutkan.'
+      : `${info.mode === 'live' ? 'Live' : 'Paper'} trading aktif: sinyal beli yang lolos aturan risiko diikuti.`,
   ];
   if (info.fallbackReasons.length > 0) {
     lines.push(

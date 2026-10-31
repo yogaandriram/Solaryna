@@ -76,6 +76,7 @@ describe('formatStartupMessage', () => {
       fallbackReasons: ['LIVE_TRADING_ACKNOWLEDGED belum "true"'],
       ingestSource: 'webhook',
       walletCount: 3,
+      paused: false,
     });
     expect(html).toContain('Mode: <b>PAPER</b>');
     expect(html).toContain('Wallet incaran aktif: 3');
@@ -89,6 +90,7 @@ describe('formatStartupMessage', () => {
       fallbackReasons: [],
       ingestSource: 'websocket',
       walletCount: 0,
+      paused: false,
     });
     expect(html).toContain('hot wallet khusus');
     expect(html).toContain('Tambahkan dengan /addwallet');

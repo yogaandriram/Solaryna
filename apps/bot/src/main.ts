@@ -12,6 +12,7 @@ import {
   deactivateWallet,
   findToken,
   insertSwapEvent,
+  isTradingPaused,
   listActiveWallets,
   upsertTokenMetadata,
 } from '@solaryna/db';
@@ -175,6 +176,7 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
       fallbackReasons: trading.fallbackReasons,
       ingestSource: config.ingest.source,
       walletCount: registry.size,
+      paused: await isTradingPaused(db),
     }),
   );
 
