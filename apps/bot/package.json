@@ -1,0 +1,20 @@
+{
+  "name": "@solaryna/bot",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@solaryna/config": "*",
+    "@solaryna/core": "*",
+    "@solaryna/db": "*",
+    "pino": "^10.4.0"
+  },
+  "devDependencies": {
+    "pino-pretty": "^13.2.0"
+  }
+}
