@@ -4,6 +4,7 @@ export * from './decimal';
 export * from './format';
 export * from './swap';
 export * from './text';
+export * from './time';
 export * from './types';
 export * from './units';
 export * from './wallet-list';
