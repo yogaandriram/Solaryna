@@ -7,3 +7,4 @@ packages/db/migrations
 CLAUDE.md
 packages/core/test/fixtures
 .superpowers
+next-env.d.ts

@@ -12,6 +12,9 @@
   ],
   "scripts": {
     "dev:bot": "npm run dev -w @solaryna/bot",
+    "dev:web": "npm run dev -w @solaryna/web",
+    "build:web": "npm run build -w @solaryna/web",
+    "start:web": "npm run start -w @solaryna/web",
     "db:create": "npm run create -w @solaryna/db",
     "db:generate": "npm run generate -w @solaryna/db",
     "db:migrate": "npm run migrate -w @solaryna/db",

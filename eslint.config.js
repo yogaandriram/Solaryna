@@ -14,6 +14,7 @@ export default defineConfig(
       '**/dist/**',
       '**/.next/**',
       '**/coverage/**',
+      '**/next-env.d.ts',
       'packages/db/migrations/**',
     ],
   },
@@ -38,7 +39,7 @@ export default defineConfig(
     },
   },
   {
-    files: ['**/*.js'],
+    files: ['**/*.js', '**/*.mjs'],
     extends: [tseslint.configs.disableTypeChecked],
   },
   {
