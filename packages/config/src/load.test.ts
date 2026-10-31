@@ -225,6 +225,32 @@ describe('loadWebConfig', () => {
   });
 });
 
+describe('loadWebConfig defaults', () => {
+  const web = {
+    DATABASE_URL: validBotEnv.DATABASE_URL,
+    DASHBOARD_PASSWORD: 'long-enough-password',
+  };
+
+  it('defaults the host, port and risk ceilings like the bot', () => {
+    const config = loadWebConfig(web);
+    expect(config.host).toBe('127.0.0.1');
+    expect(config.port).toBe(3000);
+    expect(config.risk).toEqual(loadBotConfig(validBotEnv).risk);
+    expect(
+      loadWebConfig({ ...web, DASHBOARD_HOST: '0.0.0.0', MAX_OPEN_POSITIONS: '3' }),
+    ).toMatchObject({
+      host: '0.0.0.0',
+      risk: { maxOpenPositions: 3 },
+    });
+  });
+
+  it('rejects an invalid dashboard port', () => {
+    expect(configError(() => loadWebConfig({ ...web, DASHBOARD_PORT: '70000' })).issues).toEqual([
+      'DASHBOARD_PORT: harus di antara 1 dan 65535',
+    ]);
+  });
+});
+
 describe('loadDatabaseConfig', () => {
   it('needs only DATABASE_URL', () => {
     expect(

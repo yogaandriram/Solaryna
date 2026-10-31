@@ -141,6 +141,23 @@ const commonEnvShape = {
   ...databaseEnvShape,
 };
 
+/** Risk limits; the bot enforces them and the dashboard uses them as runtime ceilings. */
+export const riskEnvShape = {
+  MAX_SOL_PER_TRADE: env(solAmount(), '0.05'),
+  MAX_OPEN_POSITIONS: env(integer(1, 100), '5'),
+  DAILY_LOSS_LIMIT_SOL: env(solAmount(), '0.2'),
+  MIN_LIQUIDITY_USD: env(decimalInRange({ min: '0' }), '20000'),
+  MAX_SLIPPAGE_BPS: env(integer(1, 10_000), '300'),
+  MAX_PRIORITY_FEE_LAMPORTS: env(lamports(), '200000'),
+  COPY_DELAY_MS: env(integer(0, 600_000), '3000'),
+  TAKE_PROFIT_PCT: env(decimalInRange({ min: '0', minExclusive: true }), '100'),
+  STOP_LOSS_PCT: env(decimalInRange({ min: '0', max: '100', minExclusive: true }), '30'),
+  MAX_HOLD_MINUTES: env(integer(1, 43_200), '240'),
+  MAX_SIGNAL_AGE_SECONDS: env(integer(1, 3600), '30'),
+};
+
+const hostname = z.string().regex(/^[A-Za-z0-9.:-]+$/, { error: 'harus hostname atau alamat IP' });
+
 export const botEnvSchema = z
   .object({
     ...commonEnvShape,
@@ -161,10 +178,7 @@ export const botEnvSchema = z
         .optional()
         .transform((value) => value ?? null),
     ),
-    WEBHOOK_HOST: env(
-      z.string().regex(/^[A-Za-z0-9.:-]+$/, { error: 'harus hostname atau alamat IP' }),
-      '127.0.0.1',
-    ),
+    WEBHOOK_HOST: env(hostname, '127.0.0.1'),
     WEBHOOK_PORT: env(integer(1, 65_535), '8787'),
     // Helius RPC URLs carry the API key in the query string, so the URL itself is a secret.
     SOLANA_RPC_URL: env(httpUrl.transform(toSecret)),
@@ -183,17 +197,7 @@ export const botEnvSchema = z
     LIVE_TRADING_ACKNOWLEDGED: env(booleanFlag, 'false'),
     BOT_WALLET_PRIVATE_KEY: optionalSecret(),
 
-    MAX_SOL_PER_TRADE: env(solAmount(), '0.05'),
-    MAX_OPEN_POSITIONS: env(integer(1, 100), '5'),
-    DAILY_LOSS_LIMIT_SOL: env(solAmount(), '0.2'),
-    MIN_LIQUIDITY_USD: env(decimalInRange({ min: '0' }), '20000'),
-    MAX_SLIPPAGE_BPS: env(integer(1, 10_000), '300'),
-    MAX_PRIORITY_FEE_LAMPORTS: env(lamports(), '200000'),
-    COPY_DELAY_MS: env(integer(0, 600_000), '3000'),
-    TAKE_PROFIT_PCT: env(decimalInRange({ min: '0', minExclusive: true }), '100'),
-    STOP_LOSS_PCT: env(decimalInRange({ min: '0', max: '100', minExclusive: true }), '30'),
-    MAX_HOLD_MINUTES: env(integer(1, 43_200), '240'),
-    MAX_SIGNAL_AGE_SECONDS: env(integer(1, 3600), '30'),
+    ...riskEnvShape,
   })
   .refine(
     (parsed) => parsed.INGEST_SOURCE !== 'webhook' || parsed.HELIUS_WEBHOOK_SECRET !== null,
@@ -219,4 +223,10 @@ export const webEnvSchema = z.object({
   DASHBOARD_PASSWORD: env(
     z.string({ error: REQUIRED }).min(12, { error: 'minimal 12 karakter' }).transform(toSecret),
   ),
+  DASHBOARD_HOST: env(hostname, '127.0.0.1'),
+  DASHBOARD_PORT: env(integer(1, 65_535), '3000'),
+  ...riskEnvShape,
 });
+
+/** The only keys the dashboard reads from .env: no bot API keys, token or private key. */
+export const WEB_ENV_KEYS: readonly string[] = Object.keys(webEnvSchema.shape);

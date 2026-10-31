@@ -79,6 +79,41 @@ export interface WebConfig {
   displayTimeZone: string;
   databaseUrl: Secret;
   dashboardPassword: Secret;
+  host: string;
+  port: number;
+  /** The .env risk limits: shown in the dashboard and used as ceilings for runtime overrides. */
+  risk: RiskLimits;
+}
+
+type RiskEnv = Pick<
+  z.output<typeof botEnvSchema>,
+  | 'MAX_SOL_PER_TRADE'
+  | 'MAX_OPEN_POSITIONS'
+  | 'DAILY_LOSS_LIMIT_SOL'
+  | 'MIN_LIQUIDITY_USD'
+  | 'MAX_SLIPPAGE_BPS'
+  | 'MAX_PRIORITY_FEE_LAMPORTS'
+  | 'COPY_DELAY_MS'
+  | 'TAKE_PROFIT_PCT'
+  | 'STOP_LOSS_PCT'
+  | 'MAX_HOLD_MINUTES'
+  | 'MAX_SIGNAL_AGE_SECONDS'
+>;
+
+function riskLimits(e: RiskEnv): RiskLimits {
+  return {
+    maxSolPerTradeLamports: e.MAX_SOL_PER_TRADE,
+    maxOpenPositions: e.MAX_OPEN_POSITIONS,
+    dailyLossLimitLamports: e.DAILY_LOSS_LIMIT_SOL,
+    minLiquidityUsd: e.MIN_LIQUIDITY_USD,
+    maxSlippageBps: e.MAX_SLIPPAGE_BPS,
+    maxPriorityFeeLamports: e.MAX_PRIORITY_FEE_LAMPORTS,
+    copyDelayMs: e.COPY_DELAY_MS,
+    takeProfitPct: e.TAKE_PROFIT_PCT,
+    stopLossPct: e.STOP_LOSS_PCT,
+    maxHoldMinutes: e.MAX_HOLD_MINUTES,
+    maxSignalAgeSeconds: e.MAX_SIGNAL_AGE_SECONDS,
+  };
 }
 
 export function loadBotConfig(env: EnvSource): BotConfig {
@@ -96,19 +131,7 @@ export function loadBotConfig(env: EnvSource): BotConfig {
       liveAcknowledged: e.LIVE_TRADING_ACKNOWLEDGED,
       botWalletPrivateKey: e.BOT_WALLET_PRIVATE_KEY,
     },
-    risk: {
-      maxSolPerTradeLamports: e.MAX_SOL_PER_TRADE,
-      maxOpenPositions: e.MAX_OPEN_POSITIONS,
-      dailyLossLimitLamports: e.DAILY_LOSS_LIMIT_SOL,
-      minLiquidityUsd: e.MIN_LIQUIDITY_USD,
-      maxSlippageBps: e.MAX_SLIPPAGE_BPS,
-      maxPriorityFeeLamports: e.MAX_PRIORITY_FEE_LAMPORTS,
-      copyDelayMs: e.COPY_DELAY_MS,
-      takeProfitPct: e.TAKE_PROFIT_PCT,
-      stopLossPct: e.STOP_LOSS_PCT,
-      maxHoldMinutes: e.MAX_HOLD_MINUTES,
-      maxSignalAgeSeconds: e.MAX_SIGNAL_AGE_SECONDS,
-    },
+    risk: riskLimits(e),
   };
 }
 
@@ -140,6 +163,9 @@ export function loadWebConfig(env: EnvSource): WebConfig {
     displayTimeZone: e.TZ_DISPLAY,
     databaseUrl: e.DATABASE_URL,
     dashboardPassword: e.DASHBOARD_PASSWORD,
+    host: e.DASHBOARD_HOST,
+    port: e.DASHBOARD_PORT,
+    risk: riskLimits(e),
   };
 }
 
