@@ -9,6 +9,9 @@ import {
   insertSwapEvent,
   isDuplicateKeyError,
   listActiveWallets,
+  listAuditLogAfter,
+  listRecentAuditLog,
+  maxAuditLogId,
   upsertTokenMetadata,
 } from './queries';
 import { TEST_DATABASE_URL, useTestDatabase } from './test-db';
@@ -93,6 +96,26 @@ describe.skipIf(TEST_DATABASE_URL === undefined)('queries (MySQL)', () => {
         action: 'wallet.remove',
         details: { address: wallet, status: 'deactivated' },
       },
+    ]);
+  });
+
+  it('lists audit entries after a cursor for one actor', async () => {
+    expect(await maxAuditLogId(db)).toBe(0);
+    await insertAuditLog(db, { actor: 'dashboard', action: 'trading.pause' });
+    await insertAuditLog(db, { actor: 'telegram:1:2', action: 'trading.resume' });
+    await insertAuditLog(db, { actor: 'dashboard', action: 'trading.resume' });
+    const max = await maxAuditLogId(db);
+    expect(max).toBeGreaterThan(0);
+    const all = await listAuditLogAfter(db, 0, 'dashboard');
+    expect(all.map((row) => row.action)).toEqual(['trading.pause', 'trading.resume']);
+    const first = all[0]?.id ?? 0;
+    expect((await listAuditLogAfter(db, first, 'dashboard')).map((row) => row.action)).toEqual([
+      'trading.resume',
+    ]);
+    expect(await listAuditLogAfter(db, max, 'dashboard')).toEqual([]);
+    expect((await listRecentAuditLog(db, 2)).map((row) => row.actor)).toEqual([
+      'dashboard',
+      'telegram:1:2',
     ]);
   });
 });

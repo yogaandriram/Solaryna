@@ -52,6 +52,71 @@ export async function setTradingPaused(
   });
 }
 
+/** Runtime risk limit overrides (JSON object of strings); see @solaryna/core runtime-limits. */
+export const RISK_LIMITS_SETTING = 'risk_limits';
+
+export async function getRiskLimitOverrides(db: Database): Promise<unknown> {
+  const [row] = await db
+    .select({ value: settings.value })
+    .from(settings)
+    .where(eq(settings.name, RISK_LIMITS_SETTING));
+  return row?.value ?? null;
+}
+
+/** Per key: the stored override before and after; null means "follow .env". */
+export type LimitChanges = Record<string, { from: string | null; to: string | null }>;
+
+function storedStrings(value: unknown): Record<string, string> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    ),
+  );
+}
+
+/**
+ * Replaces the runtime limit overrides and audits what changed, atomically. Nothing is written
+ * when the overrides are unchanged.
+ */
+export async function setRiskLimitOverrides(
+  db: Database,
+  next: Record<string, string>,
+  audit: AuditActor,
+): Promise<{ changes: LimitChanges }> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ value: settings.value })
+      .from(settings)
+      .where(eq(settings.name, RISK_LIMITS_SETTING))
+      .for('update');
+    const previous = storedStrings(row?.value);
+    const changes: LimitChanges = {};
+    for (const key of [...new Set([...Object.keys(previous), ...Object.keys(next)])].sort()) {
+      const from = previous[key] ?? null;
+      const to = next[key] ?? null;
+      if (from !== to) {
+        changes[key] = { from, to };
+      }
+    }
+    if (Object.keys(changes).length === 0) {
+      return { changes };
+    }
+    await tx
+      .insert(settings)
+      .values({ name: RISK_LIMITS_SETTING, value: next })
+      .onDuplicateKeyUpdate({ set: { value: next, updatedAt: new Date() } });
+    await tx.insert(auditLog).values({
+      actor: audit.actor,
+      action: 'limits.update',
+      details: { changes },
+    });
+    return { changes };
+  });
+}
+
 export async function getSettingString(db: Database, name: string): Promise<string | null> {
   const [row] = await db
     .select({ value: settings.value })
@@ -184,6 +249,27 @@ export async function sumRealizedPnl(
     .from(trades)
     .where(and(eq(trades.mode, mode), gte(trades.executedAt, from), lt(trades.executedAt, to)));
   return BigInt(row?.total ?? '0');
+}
+
+/**
+ * Stores the monitor's latest valuation of an open position. Skipped (false) when the position
+ * closed or its amount changed since the quote, so a stale quote never overwrites a newer state.
+ */
+export async function savePositionValuation(
+  db: Database,
+  input: { positionId: number; tokenAmountRaw: bigint; netValueLamports: bigint | null; at: Date },
+): Promise<boolean> {
+  const [result] = await db
+    .update(positions)
+    .set({ lastValueLamports: input.netValueLamports, lastValuedAt: input.at })
+    .where(
+      and(
+        eq(positions.id, input.positionId),
+        eq(positions.status, 'open'),
+        eq(positions.tokenAmountRaw, input.tokenAmountRaw),
+      ),
+    );
+  return result.affectedRows > 0;
 }
 
 export async function getWalletCooldown(db: Database, walletId: number): Promise<Date | null> {

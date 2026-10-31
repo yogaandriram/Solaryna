@@ -6,6 +6,7 @@ import { TEST_DATABASE_URL, useTestDatabase } from './test-db';
 import {
   findOpenPositionByToken,
   getPosition,
+  getRiskLimitOverrides,
   getSettingString,
   getWalletCooldown,
   insertSignal,
@@ -14,7 +15,9 @@ import {
   listOpenPositions,
   openPosition,
   recordSell,
+  savePositionValuation,
   saveTokenMarketData,
+  setRiskLimitOverrides,
   setSettingString,
   setTradingPaused,
   sumRealizedPnl,
@@ -312,5 +315,86 @@ describe.skipIf(TEST_DATABASE_URL === undefined)('trading queries (MySQL)', () =
       liquidityUsd: null,
       mintAuthorityActive: true,
     });
+  });
+
+  it('saves a valuation only while the position is open and unchanged', async () => {
+    const { positionId } = await openTestPosition();
+    const at = new Date('2026-10-31T03:05:00.000Z');
+    expect(
+      await savePositionValuation(db, {
+        positionId,
+        tokenAmountRaw: 1_000_000n,
+        netValueLamports: 61_000_000n,
+        at,
+      }),
+    ).toBe(true);
+    expect(await getPosition(db, positionId)).toMatchObject({
+      lastValueLamports: 61_000_000n,
+      lastValuedAt: at,
+    });
+    // No route: the value is cleared but the time is kept.
+    expect(
+      await savePositionValuation(db, {
+        positionId,
+        tokenAmountRaw: 1_000_000n,
+        netValueLamports: null,
+        at,
+      }),
+    ).toBe(true);
+    expect(await getPosition(db, positionId)).toMatchObject({ lastValueLamports: null });
+    // A quote for an amount the position no longer holds is dropped.
+    expect(
+      await savePositionValuation(db, {
+        positionId,
+        tokenAmountRaw: 999n,
+        netValueLamports: 1n,
+        at,
+      }),
+    ).toBe(false);
+    await db.execute(sql`UPDATE positions SET status = 'closed' WHERE id = ${positionId}`);
+    expect(
+      await savePositionValuation(db, {
+        positionId,
+        tokenAmountRaw: 1_000_000n,
+        netValueLamports: 1n,
+        at,
+      }),
+    ).toBe(false);
+  });
+
+  it('stores runtime limit overrides and audits only real changes', async () => {
+    expect(await getRiskLimitOverrides(db)).toBeNull();
+    const actor = { actor: 'dashboard' };
+    expect(await setRiskLimitOverrides(db, { maxOpenPositions: '3' }, actor)).toEqual({
+      changes: { maxOpenPositions: { from: null, to: '3' } },
+    });
+    expect(await getRiskLimitOverrides(db)).toEqual({ maxOpenPositions: '3' });
+    expect(await setRiskLimitOverrides(db, { maxOpenPositions: '3' }, actor)).toEqual({
+      changes: {},
+    });
+    expect(await setRiskLimitOverrides(db, { stopLossPct: '20' }, actor)).toEqual({
+      changes: {
+        maxOpenPositions: { from: '3', to: null },
+        stopLossPct: { from: null, to: '20' },
+      },
+    });
+    const [rows] = await db.execute(sql`SELECT actor, action, details FROM audit_log ORDER BY id`);
+    expect(rows).toEqual([
+      {
+        actor: 'dashboard',
+        action: 'limits.update',
+        details: { changes: { maxOpenPositions: { from: null, to: '3' } } },
+      },
+      {
+        actor: 'dashboard',
+        action: 'limits.update',
+        details: {
+          changes: {
+            maxOpenPositions: { from: '3', to: null },
+            stopLossPct: { from: null, to: '20' },
+          },
+        },
+      },
+    ]);
   });
 });

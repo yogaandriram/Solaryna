@@ -1,10 +1,11 @@
 import type { SwapEvent } from '@solaryna/core';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
 import type { Database } from './client';
 import { auditLog, swapEvents, tokens, trackedWallets } from './schema';
 
 export type TrackedWallet = typeof trackedWallets.$inferSelect;
 export type TokenRow = typeof tokens.$inferSelect;
+export type AuditLogRow = typeof auditLog.$inferSelect;
 
 /** MySQL duplicate-key error, possibly wrapped by drizzle. */
 export function isDuplicateKeyError(error: unknown): boolean {
@@ -166,4 +167,28 @@ export async function insertAuditLog(
     action: entry.action,
     details: entry.details ?? null,
   });
+}
+
+export async function maxAuditLogId(db: Database): Promise<number> {
+  const [row] = await db.select({ max: sql<string | null>`MAX(${auditLog.id})` }).from(auditLog);
+  return Number(row?.max ?? 0);
+}
+
+/** Entries by `actor` with an id above `afterId`, oldest first. */
+export async function listAuditLogAfter(
+  db: Database,
+  afterId: number,
+  actor: string,
+  limit = 50,
+): Promise<AuditLogRow[]> {
+  return db
+    .select()
+    .from(auditLog)
+    .where(and(gt(auditLog.id, afterId), eq(auditLog.actor, actor)))
+    .orderBy(asc(auditLog.id))
+    .limit(limit);
+}
+
+export async function listRecentAuditLog(db: Database, limit: number): Promise<AuditLogRow[]> {
+  return db.select().from(auditLog).orderBy(desc(auditLog.id)).limit(limit);
 }

@@ -165,6 +165,9 @@ export const positions = mysqlTable(
     feesLamports: rawAmount('fees_lamports').notNull(),
     realizedPnlLamports: rawAmount('realized_pnl_lamports'),
     closeReason: mysqlEnum('close_reason', CLOSE_REASONS),
+    /** Latest monitor quote for the remainder, minus sell fees; null when there was no route. */
+    lastValueLamports: rawAmount('last_value_lamports'),
+    lastValuedAt: utcDatetime('last_valued_at'),
     openedAt: utcDatetime('opened_at').notNull(),
     closedAt: utcDatetime('closed_at'),
     createdAt: createdAt(),
