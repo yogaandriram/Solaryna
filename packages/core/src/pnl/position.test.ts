@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   applySell,
+  estimatedPnlLamports,
   followSellTokenAmount,
+  pendingBuyFeesLamports,
   remainingCostLamports,
   type PositionState,
 } from './position';
@@ -96,5 +98,29 @@ describe('followSellTokenAmount', () => {
 
   it('rounds down to zero for a tiny share', () => {
     expect(followSellTokenAmount(3n, 1n, 1000n)).toBe(0n);
+  });
+});
+
+describe('pendingBuyFeesLamports and estimatedPnlLamports', () => {
+  const unsold: PositionState = {
+    initialTokenAmountRaw: 1_000_000n,
+    tokenAmountRaw: 1_000_000n,
+    costLamports: 50_000_000n,
+    proceedsLamports: 0n,
+    feesLamports: 205_000n,
+    realizedPnlLamports: 0n,
+  };
+
+  it('counts the buy fees as pending until the first sale', () => {
+    expect(pendingBuyFeesLamports(unsold)).toBe(205_000n);
+    expect(pendingBuyFeesLamports({ ...unsold, tokenAmountRaw: 400_000n })).toBe(0n);
+  });
+
+  it('estimates the PnL of selling the remainder after all fees', () => {
+    expect(estimatedPnlLamports(unsold, 60_000_000n)).toBe(9_795_000n);
+    // Half sold: remaining cost 25_000_000, buy fees already realized.
+    expect(estimatedPnlLamports({ ...unsold, tokenAmountRaw: 500_000n }, 24_000_000n)).toBe(
+      -1_000_000n,
+    );
   });
 });

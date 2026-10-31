@@ -31,6 +31,21 @@ export function remainingCostLamports(state: PositionState): bigint {
   return (state.costLamports * state.tokenAmountRaw) / state.initialTokenAmountRaw;
 }
 
+/** Fees already paid but not yet in the realized PnL: the buy fees, until the first sale. */
+export function pendingBuyFeesLamports(
+  position: Pick<PositionState, 'tokenAmountRaw' | 'initialTokenAmountRaw' | 'feesLamports'>,
+): bigint {
+  return position.tokenAmountRaw === position.initialTokenAmountRaw ? position.feesLamports : 0n;
+}
+
+/**
+ * Estimated PnL of selling the remainder for `netValueLamports` (the sell quote minus sell
+ * fees): what the position would add to the realized PnL, including buy fees not yet realized.
+ */
+export function estimatedPnlLamports(state: PositionState, netValueLamports: bigint): bigint {
+  return netValueLamports - remainingCostLamports(state) - pendingBuyFeesLamports(state);
+}
+
 /**
  * Applies a sale. A partial sale realizes its share of the cost; the buy fees are realized on
  * the first sale. The final sale realizes the exact remainder, so the position's total

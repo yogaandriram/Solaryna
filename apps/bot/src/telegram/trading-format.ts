@@ -3,8 +3,11 @@ import {
   WSOL_MINT,
   escapeHtml,
   formatAmount,
+  describeRiskReason as describeReasonText,
   formatDateTime,
+  pendingBuyFeesLamports,
   shortAddress,
+  tradeReasonLabel,
   type DailySummary,
   type Decomposition,
   type PeriodRange,
@@ -18,7 +21,6 @@ import {
 } from '@solaryna/core';
 import type { PositionRow } from '@solaryna/db';
 import type { SignalOutcome } from '../engine/engine';
-import { pendingBuyFeesLamports } from '../engine/sell';
 import type { TradeFill } from '../executor/types';
 import type { Valuation } from '../exits/monitor';
 import type { TokenLabel } from '../tokens/token-info';
@@ -46,8 +48,6 @@ function percent(value: Decimal, signed = false): string {
   return `${signed && value.gt(0) ? '+' : ''}${text}%`;
 }
 
-const usd = (value: string) => `$${number(value)}`;
-
 function tokenTitle(token: TokenLabel, mint: string): string {
   return token.symbol === null
     ? `<code>${escapeHtml(shortAddress(mint))}</code>`
@@ -66,113 +66,11 @@ function dateLabel(dateKey: string): string {
 
 const modeLabel = (mode: TradingMode) => (mode === 'paper' ? 'Paper' : 'Live');
 
-const TRADE_REASON_LABELS: Record<TradeReason, string> = {
-  copy_buy: 'ikut beli',
-  follow_sell: 'ikut jual',
-  take_profit: 'take-profit',
-  stop_loss: 'stop-loss',
-  max_hold: 'batas waktu hold',
-  unsellable: 'tidak bisa dijual (dihapusbukukan, nilai 0)',
-};
-
-const reasonLabel = (reason: string) =>
-  reason in TRADE_REASON_LABELS
-    ? TRADE_REASON_LABELS[reason as TradeReason]
-    : reason === 'manual'
-      ? 'manual'
-      : reason;
+const reasonLabel = tradeReasonLabel;
 
 /** One reason in Indonesian, HTML-escaped; works without `detail` (for report counts). */
 export function describeRiskReason(reason: RiskReason, timeZone: string): string {
-  const d = reason.detail ?? {};
-  const text = (key: string) => {
-    const value = d[key];
-    return value === undefined || value === null ? null : String(value);
-  };
-  let message: string;
-  switch (reason.code) {
-    case 'trading_paused':
-      message = 'trading dijeda';
-      break;
-    case 'max_open_positions':
-      message =
-        text('open') === null
-          ? 'posisi terbuka penuh'
-          : `posisi terbuka penuh (${text('open')}/${text('max')})`;
-      break;
-    case 'already_holding':
-      message = 'token sudah dipegang';
-      break;
-    case 'daily_loss_limit': {
-      const realized = text('realizedLamports');
-      const limit = text('limitLamports');
-      message =
-        realized === null || limit === null
-          ? 'batas rugi harian tercapai'
-          : `batas rugi harian tercapai (${sol(BigInt(realized))}, batas -${sol(BigInt(limit))})`;
-      break;
-    }
-    case 'token_data_unavailable':
-      message = 'data token tidak tersedia';
-      break;
-    case 'liquidity_below_min': {
-      const min = text('min');
-      const actual = text('actual');
-      if (min === null) {
-        message = 'likuiditas di bawah minimum';
-      } else if (actual === null) {
-        message = `likuiditas tidak diketahui (min ${usd(min)})`;
-      } else {
-        message = `likuiditas ${usd(actual)} < ${usd(min)}`;
-      }
-      break;
-    }
-    case 'mint_authority_active':
-      message = 'mint authority masih aktif';
-      break;
-    case 'freeze_authority_active':
-      message = 'freeze authority masih aktif';
-      break;
-    case 'token_flagged_suspicious':
-      message = 'token ditandai mencurigakan oleh Jupiter';
-      break;
-    case 'token_blacklisted':
-      message = 'token di blacklist';
-      break;
-    case 'wallet_cooldown': {
-      const until = text('until');
-      message =
-        until === null
-          ? 'wallet sedang cooldown'
-          : `wallet cooldown sampai ${formatDateTime(new Date(until), timeZone)}`;
-      break;
-    }
-    case 'signal_too_old':
-      message =
-        text('ageSeconds') === null
-          ? 'sinyal terlambat'
-          : `sinyal terlambat ${text('ageSeconds')} dtk (maks ${text('maxSeconds')})`;
-      break;
-    case 'price_impact_too_high':
-      message =
-        text('actualPct') === null
-          ? 'price impact terlalu tinggi'
-          : `price impact ${number(text('actualPct') ?? '0', 2)}% (maks ${number(text('maxPct') ?? '0', 2)}%)`;
-      break;
-    case 'no_route':
-      message = 'tidak ada rute swap';
-      break;
-    case 'quote_failed':
-      message = 'quote Jupiter gagal';
-      break;
-    case 'not_holding':
-      message = 'tidak memegang token ini';
-      break;
-    case 'sell_amount_zero':
-      message = 'porsi jual terlalu kecil';
-      break;
-  }
-  return escapeHtml(message);
+  return escapeHtml(describeReasonText(reason, timeZone));
 }
 
 /** The line appended to a swap alert once the engine has decided. */

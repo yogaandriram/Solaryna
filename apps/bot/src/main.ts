@@ -6,7 +6,7 @@ import {
   type BotConfig,
   type Secret,
 } from '@solaryna/config';
-import { remainingCostLamports } from '@solaryna/core';
+import { pendingBuyFeesLamports, remainingCostLamports } from '@solaryna/core';
 import {
   addManualWallet,
   createDb,
@@ -23,7 +23,7 @@ import {
 import type { Logger } from 'pino';
 import { createEngine } from './engine/engine';
 import { createKeyedMutex } from './engine/locks';
-import { pendingBuyFeesLamports, positionState, type TradingEvents } from './engine/sell';
+import { positionState, type TradingEvents } from './engine/sell';
 import { createDbTradingStore } from './engine/store';
 import { createPaperExecutor } from './executor/paper';
 import { createPositionMonitor } from './exits/monitor';

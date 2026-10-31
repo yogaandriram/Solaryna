@@ -2,6 +2,7 @@ export * from './address';
 export * from './constants';
 export * from './decimal';
 export * from './format';
+export * from './labels';
 export * from './pnl';
 export * from './risk';
 export * from './swap';
