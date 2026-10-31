@@ -6,3 +6,4 @@ package-lock.json
 packages/db/migrations
 CLAUDE.md
 packages/core/test/fixtures
+.superpowers

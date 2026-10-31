@@ -42,6 +42,11 @@ export function positionState(position: PositionRow): PositionState {
   };
 }
 
+/** Fees already paid but not yet in the realized PnL: the buy fees, until the first sale. */
+export function pendingBuyFeesLamports(position: PositionRow): bigint {
+  return position.tokenAmountRaw === position.initialTokenAmountRaw ? position.feesLamports : 0n;
+}
+
 /** SOL per whole token, for display; null when no tokens changed hands. */
 function priceSol(fill: TradeFill, tokenDecimals: number): string | null {
   if (fill.tokenAmountRaw <= 0n) {

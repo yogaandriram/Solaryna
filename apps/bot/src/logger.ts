@@ -18,7 +18,8 @@ const REDACTED = '[redacted]';
 // Shorter values (e.g. an empty DB password) would scrub unrelated text.
 const MIN_SCRUB_LENGTH = 8;
 
-function createScrubber(secrets: readonly Secret[]): (text: string) => string {
+/** Replaces secret values in text; for text that leaves the process without the logger. */
+export function createSecretScrubber(secrets: readonly Secret[]): (text: string) => string {
   const values = [...new Set(secrets.map((secret) => secret.reveal()))]
     .filter((value) => value.length >= MIN_SCRUB_LENGTH)
     .sort((a, b) => b.length - a.length);
@@ -56,7 +57,7 @@ function scrubDeep(
 }
 
 export function createLogger(options: CreateLoggerOptions = {}): Logger {
-  const scrub = createScrubber(options.secrets ?? []);
+  const scrub = createSecretScrubber(options.secrets ?? []);
   const base: LoggerOptions = {
     level: options.level ?? 'info',
     redact: { paths: [...LOG_REDACT_PATHS], censor: REDACTED },

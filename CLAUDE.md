@@ -115,6 +115,15 @@ Catatan implementasi M1 yang perlu dijaga:
 - Logger bot menerima daftar `Secret` dari config dan men-scrub nilainya dari semua log, termasuk pesan error HTTP. Error setelah logger dibuat harus lewat logger, bukan `console`.
 - Escape semua teks on-chain/label dengan `escapeHtml` sebelum dikirim ke Telegram; label & nama token disanitasi dengan `sanitizeDisplayText` sebelum disimpan.
 
+Catatan implementasi M2 yang perlu dijaga:
+- `Executor` dua langkah: `prepareBuy`/`prepareSell` (quote) lalu `execute`. Mesin risiko tahap pasar dinilai dari quote yang sama yang dieksekusi; kill switch dicek lagi tepat sebelum `execute`. Live (M5) wajib memakai antarmuka yang sama.
+- Satu rate limiter Jupiter (`apps/bot/src/jupiter/rate-limiter.ts`, 1 request/detik) dipakai bersama; prioritas `exit` > `buy` > `monitor`, permintaan `monitor` dipromosikan setara `exit` setelah 30 detik. Permintaan beli membawa `expiresAt` supaya sinyal basi tidak di-quote.
+- Penjualan posisi (follow-sell, TP/SL/max hold, unsellable) lewat `recordSale` di `engine/sell.ts` dan dikunci per token (`KeyedMutex`) agar engine dan monitor tidak menjual dua kali.
+- Rumus PnL posisi dan penguraian penyebab di `packages/core/src/pnl/README.md`; ubah hanya bersama test-nya. Biaya beli direalisasikan pada penjualan pertama.
+- Kunci tabel `settings`: `trading_paused` (kill switch), `last_daily_report`, `last_weekly_report` (cursor laporan, tanggal lokal `YYYY-MM-DD`).
+- Teks error yang dikirim ke Telegram di-scrub dengan `createSecretScrubber` karena tidak lewat logger.
+- `npm run db:generate -- --name x` tidak meneruskan nama; untuk migrasi bernama jalankan `npx drizzle-kit generate --name <nama>` dari `packages/db`.
+
 Sebelum menyatakan pekerjaan selesai: jalankan `npm run typecheck`, `npm run lint`, dan `npm run test`, lalu laporkan hasilnya apa adanya.
 
 ## Lingkungan lokal (Windows + Laragon)

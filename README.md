@@ -11,9 +11,10 @@ Panduan lengkap arsitektur, aturan keamanan, dan milestone ada di [CLAUDE.md](CL
 
 ## Status
 
-Milestone **M1 (ingest + alert)**. Bot menerima transaksi wallet incaran (webhook Helius atau
-websocket), menormalisasi swap beli/jual, menyimpannya, dan mengirim alert Telegram. Belum ada
-paper/live trading — itu M2 dan M5.
+Milestone **M2 (paper trading)**. Bot menerima transaksi wallet incaran (webhook Helius atau
+websocket), menormalisasi swap beli/jual, mengirim alert Telegram, lalu **menyimulasikan** apakah
+swap itu diikuti: aturan risiko, quote Jupiter nyata, posisi, exit otomatis, dan laporan PnL.
+Tidak ada transaksi yang dikirim. Live trading baru ada di M5.
 
 ## Prasyarat
 
@@ -44,14 +45,62 @@ jika webhook Helius tidak ditemukan atau bukan tipe raw.
 
 Perintah bot:
 
-| Perintah                      | Fungsi                                       |
-| ----------------------------- | -------------------------------------------- |
-| `/list`                       | Daftar wallet incaran aktif                  |
-| `/addwallet <alamat> [label]` | Tambah wallet (atau aktifkan kembali)        |
-| `/removewallet <alamat>`      | Berhenti memantau; riwayatnya tetap disimpan |
-| `/help`                       | Bantuan                                      |
+| Perintah                      | Fungsi                                          |
+| ----------------------------- | ----------------------------------------------- |
+| `/list`                       | Daftar wallet incaran aktif                     |
+| `/addwallet <alamat> [label]` | Tambah wallet (atau aktifkan kembali)           |
+| `/removewallet <alamat>`      | Berhenti memantau; riwayatnya tetap disimpan    |
+| `/status`                     | Mode, status jeda, posisi terbuka, PnL hari ini |
+| `/positions`                  | Posisi terbuka, modal, umur, estimasi PnL       |
+| `/report`                     | Laporan hari ini sejauh ini                     |
+| `/report minggu`              | Laporan 7 hari terakhir                         |
+| `/pause`                      | Kill switch: jeda semua beli dan exit           |
+| `/resume`                     | Lanjutkan trading                               |
+| `/help`                       | Bantuan                                         |
 
-`/addwallet` dan `/removewallet` dicatat di tabel `audit_log`.
+`/addwallet`, `/removewallet`, `/pause`, dan `/resume` dicatat di tabel `audit_log`.
+
+## Paper trading
+
+Setiap swap wallet incaran menghasilkan **sinyal** yang selalu disimpan bersama keputusannya.
+Alert Telegram swap itu diedit beberapa detik kemudian dengan satu baris keputusan, misalnya
+`🧪 Paper: diikuti` atau `🧪 Paper: dilewati — likuiditas $12.300 < $20.000`.
+
+- **Beli:** cek awal (kill switch, posisi terbuka penuh, token sudah dipegang, batas rugi harian,
+  blacklist, cooldown wallet, umur sinyal) → tunggu `COPY_DELAY_MS` → data token Jupiter
+  (likuiditas, mint/freeze authority, tanda mencurigakan) → quote beli `MAX_SOL_PER_TRADE` dengan
+  `MAX_SLIPPAGE_BPS` → cek price impact → kill switch dicek lagi tepat sebelum dicatat.
+- **Jual ikut wallet:** bila wallet yang membuka posisi menjual, bot menjual porsi yang sama
+  (persentase dari saldo wallet sebelum swap).
+- **Exit otomatis:** tiap 30 detik bot meminta quote jual seluruh sisa posisi; take-profit
+  (`TAKE_PROFIT_PCT`), stop-loss (`STOP_LOSS_PCT`), atau `MAX_HOLD_MINUTES`. Token tanpa rute jual
+  ditutup dengan nilai 0 setelah batas hold.
+- **Biaya simulasi** per transaksi: fee jaringan 5.000 lamports + priority fee
+  `MAX_PRIORITY_FEE_LAMPORTS`. Fee DEX/platform sudah termasuk di jumlah quote Jupiter dan hanya
+  ditampilkan sebagai informasi. PnL selalu dihitung setelah biaya.
+- **Kill switch** (`/pause`): sinyal beli dan jual ikut wallet dilewati (tercatat dengan alasan
+  `trading dijeda`), exit otomatis menunggu sampai `/resume`. Statusnya disimpan di tabel `settings`, jadi tetap berlaku setelah restart.
+
+Semua quote memakai satu batas rate Jupiter (1 request/detik). Urutannya: jual (exit dan ikut
+wallet) dulu, lalu beli, lalu quote pemantauan posisi; quote pemantauan yang menunggu lebih dari
+30 detik disetarakan dengan jual.
+
+### Laporan
+
+Laporan harian (hari sebelumnya) dikirim tiap 07.00 WIB, laporan mingguan (Senin–Minggu) tiap
+Senin 07.00 WIB. Bila bot mati saat jadwal, laporan terbaru dikirim begitu bot menyala lagi. Pada
+start pertama bot hanya mencatat titik awal, tanpa mengirim laporan.
+
+Laporan mingguan menguraikan PnL setiap posisi yang ditutup menjadi:
+
+- **Hasil wallet itu sendiri**: untung/rugi wallet incaran pada trade yang sama, diskalakan ke modal
+  kita. Negatif berarti wallet-nya memang rugi.
+- **Selisih masuk**: akibat harga beli kita berbeda dari wallet (jeda copy dan slippage).
+- **Selisih keluar**: akibat kita keluar lebih cepat atau lebih lambat dari wallet (TP/SL/max hold).
+- **Biaya**: fee jaringan + priority fee.
+
+Rumus lengkapnya ada di [packages/core/src/pnl/README.md](packages/core/src/pnl/README.md). Bila
+harga masuk wallet tidak bisa dihitung, posisi itu ditandai "tidak tersedia".
 
 ## Sumber event
 
@@ -116,8 +165,8 @@ Bot yang sedang jalan memuat wallet baru dalam satu menit. File `wallets*.txt` d
 ## Struktur
 
 ```
-apps/bot          proses utama (24 jam): ingest, Telegram, sinkron wallet
-packages/core     logika murni tanpa I/O: parser swap, format angka, (nanti) risiko/skor/PnL
+apps/bot          proses utama (24 jam): ingest, engine paper trading, exit, laporan, Telegram
+packages/core     logika murni tanpa I/O: parser swap, risiko, PnL & laporan, waktu, format angka
 packages/config   skema env (zod), loader .env, Secret, resolver mode trading
 packages/db       skema Drizzle, migrasi, client MySQL, query bersama
 scripts           impor wallet, ambil fixture transaksi

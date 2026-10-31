@@ -14,6 +14,7 @@ import {
   describeRiskReason,
   formatDailyReport,
   formatDecisionLine,
+  formatExecutionError,
   formatPositionClosed,
   formatPositions,
   formatStatus,
@@ -175,6 +176,22 @@ describe('formatTradeExecuted', () => {
     expect(html).toContain('PAPER JUAL');
     expect(html).toContain('stop-loss');
     expect(html).toContain('PnL realisasi: -0,01062 SOL');
+  });
+});
+
+describe('formatExecutionError', () => {
+  it('names the token and side and escapes the error text', () => {
+    const html = formatExecutionError({
+      tokenMint: MINT,
+      side: 'sell',
+      message: 'Jupiter getOrder failed (500): <html>',
+      token: EVIL,
+    });
+    expect(html).toContain('Paper');
+    expect(html).toContain('jual');
+    expect(html).toContain('&lt;b&gt;PWN&lt;/b&gt;');
+    expect(html).toContain('(500): &lt;html&gt;');
+    expect(html).not.toContain('<html>');
   });
 });
 

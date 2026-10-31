@@ -1,6 +1,6 @@
 import { Secret } from '@solaryna/config';
 import { describe, expect, it } from 'vitest';
-import { createLogger } from './logger';
+import { createLogger, createSecretScrubber } from './logger';
 
 const BOT_TOKEN = '123456789:AAH-fake-telegram-token';
 const RPC_URL = 'https://mainnet.helius-rpc.com/?api-key=fake-helius-key-0001';
@@ -78,5 +78,15 @@ describe('createLogger', () => {
     const { logger, output } = captureLogs();
     logger.info({ mode: 'paper', wallet: 'So11111111111111111111111111111111111111112' });
     expect(output()).toContain('"mode":"paper"');
+  });
+});
+
+describe('createSecretScrubber', () => {
+  it('removes secret values from text that leaves the process outside the logger', () => {
+    const scrub = createSecretScrubber([new Secret('super-secret-key-123'), new Secret('')]);
+    expect(scrub('GET https://x/?api-key=super-secret-key-123 failed')).toBe(
+      'GET https://x/?api-key=[redacted] failed',
+    );
+    expect(scrub('nothing here')).toBe('nothing here');
   });
 });

@@ -11,12 +11,14 @@ import {
   type ReportPosition,
   type RiskReason,
   type SwapEvent,
+  type SwapSide,
   type TradeReason,
   type TradingMode,
   type WeeklyReport,
 } from '@solaryna/core';
 import type { PositionRow } from '@solaryna/db';
 import type { SignalOutcome } from '../engine/engine';
+import { pendingBuyFeesLamports } from '../engine/sell';
 import type { TradeFill } from '../executor/types';
 import type { Valuation } from '../exits/monitor';
 import type { TokenLabel } from '../tokens/token-info';
@@ -262,6 +264,21 @@ export function formatTradeExecuted(input: TradeExecutedInput): string {
   return lines.join('\n');
 }
 
+/** An exit or copy trade that was triggered but could not be executed or recorded. */
+export function formatExecutionError(input: {
+  tokenMint: string;
+  side: SwapSide;
+  message: string;
+  token: TokenLabel;
+  mode?: TradingMode;
+}): string {
+  return [
+    `❌ <b>${modeLabel(input.mode ?? 'paper')}: gagal ${input.side === 'buy' ? 'beli' : 'jual'}</b> · ${tokenTitle(input.token, input.tokenMint)}`,
+    escapeHtml(input.message),
+    'Detail ada di log bot.',
+  ].join('\n');
+}
+
 export function formatPositionClosed(input: {
   position: PositionRow;
   reason: string;
@@ -327,8 +344,8 @@ export function formatPositions(items: PositionListItem[]): string {
       lines.push('Nilai: tidak ada rute jual');
     } else {
       // Buy fees are realized at the first sale; until then they still count against the PnL.
-      const pendingFees = p.tokenAmountRaw === p.initialTokenAmountRaw ? p.feesLamports : 0n;
-      const estimate = valuation.netValueLamports - valuation.remainingCostLamports - pendingFees;
+      const estimate =
+        valuation.netValueLamports - valuation.remainingCostLamports - pendingBuyFeesLamports(p);
       lines.push(`Nilai: ${sol(valuation.netValueLamports)} · estimasi PnL ${signedSol(estimate)}`);
     }
     return lines.join('\n');

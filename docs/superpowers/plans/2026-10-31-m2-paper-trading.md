@@ -29,7 +29,7 @@ rencana ini; `CLAUDE.md` berlaku untuk semua task).
   429 + header `x-ratelimit-reset` (detik Unix). Cek ulang dokumentasi developers.jup.ag sebelum
   menulis klien.
 - Biaya paper per transaksi: fee jaringan `5000n` lamports + priority fee `MAX_PRIORITY_FEE_LAMPORTS`
-  + fee DEX/platform dari quote.
+  - fee DEX/platform dari quote.
 - Ukuran beli selalu `MAX_SOL_PER_TRADE`; `slippageBps = MAX_SLIPPAGE_BPS`; jeda `COPY_DELAY_MS`;
   `MAX_SIGNAL_AGE_SECONDS` default `30`; cek posisi tiap `30_000` ms; laporan harian 07.00 WIB,
   mingguan Senin 07.00 WIB (zona dari `TZ_DISPLAY`).
@@ -379,7 +379,7 @@ Alur `handleSwap` mengikuti §4 spec persis. Detail yang ditetapkan rencana:
   (posisi `initialTokenAmountRaw = tokenAmountRaw = fill.tokenAmountRaw`, `costLamports = fill.solAmountLamports`,
   `feesLamports` = total fee, `realizedPnlLamports = 0n`, `proceedsLamports = 0n`).
 - Jual: `findOpenPositionByToken` dengan `trackedWalletId === wallet.id`, jika tidak → `rejected
-  not_holding`; tunggu `COPY_DELAY_MS` (§4 spec); lalu di dalam `locks.run(tokenMint)`: baca ulang
+not_holding`; tunggu `COPY_DELAY_MS` (§4 spec); lalu di dalam `locks.run(tokenMint)`: baca ulang
   posisi (sudah closed → `not_holding`), porsi via `followSellTokenAmount` (`0n` →
   `sell_amount_zero`), `prepareSell` prioritas `exit`, cek pause, `execute`, `applySell`,
   `recordSell` (reason `follow_sell`). Tanpa batas umur sinyal.

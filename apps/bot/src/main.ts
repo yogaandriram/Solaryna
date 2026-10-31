@@ -6,30 +6,48 @@ import {
   type BotConfig,
   type Secret,
 } from '@solaryna/config';
+import { remainingCostLamports } from '@solaryna/core';
 import {
   addManualWallet,
   createDb,
   deactivateWallet,
   findToken,
   insertSwapEvent,
-  isTradingPaused,
   listActiveWallets,
+  listClosedReportPositions,
+  listReportBuySignals,
+  listReportTrades,
   upsertTokenMetadata,
+  type PositionRow,
 } from '@solaryna/db';
 import type { Logger } from 'pino';
+import { createEngine } from './engine/engine';
+import { createKeyedMutex } from './engine/locks';
+import { pendingBuyFeesLamports, positionState, type TradingEvents } from './engine/sell';
+import { createDbTradingStore } from './engine/store';
+import { createPaperExecutor } from './executor/paper';
+import { createPositionMonitor } from './exits/monitor';
 import { createHeliusClient } from './helius/client';
 import { WebhookConfigError, createHeliusWebhookTarget } from './helius/webhook-target';
 import { createIngestor } from './ingest/ingestor';
 import { LogsSubscriber, toWebSocketUrl } from './ingest/logs-subscriber';
 import { createTransactionFetcher } from './ingest/transaction-fetcher';
 import { HELIUS_WEBHOOK_PATH, buildWebhookServer } from './ingest/webhook-server';
+import { createReportJob } from './jobs/reports';
 import { createWalletSync, type SubscriptionTarget } from './jobs/wallet-sync';
-import { createLogger } from './logger';
+import { createJupiterClient } from './jupiter/client';
+import { createRateLimiter } from './jupiter/rate-limiter';
+import { createLogger, createSecretScrubber } from './logger';
 import { BOT_COMMANDS, createTelegramBot } from './telegram/bot';
 import { formatStartupMessage, formatSwapAlert } from './telegram/format';
 import { createTelegramNotifier } from './telegram/notifier';
-import { createTokenInfoResolver } from './tokens/token-info';
-import { createDbTradingStore } from './engine/store';
+import {
+  formatDecisionLine,
+  formatExecutionError,
+  formatPositionClosed,
+  formatTradeExecuted,
+} from './telegram/trading-format';
+import { createTokenInfoResolver, type TokenLabel } from './tokens/token-info';
 import { WalletRegistry } from './wallets/registry';
 
 // Becomes true in M5, once the Jupiter live executor exists and is tested with mocks.
@@ -99,7 +117,126 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
     logger,
   });
 
+  const timeZone = config.displayTimeZone;
+  const now = () => new Date();
+  // Error texts go to Telegram without passing the logger, so scrub secrets here too.
+  const scrub = createSecretScrubber(configSecrets(config));
+  const walletById = (id: number | null) => (id === null ? undefined : registry.findById(id));
+
+  // Paper trading: one shared Jupiter rate limit for buys, exits and monitor quotes.
+  const jupiter = createJupiterClient({
+    apiKey: config.jupiter.apiKey,
+    limiter: createRateLimiter(),
+  });
+  const executor = createPaperExecutor({
+    jupiter,
+    slippageBps: config.risk.maxSlippageBps,
+    priorityFeeLamports: config.risk.maxPriorityFeeLamports,
+    now,
+  });
   const tradingStore = createDbTradingStore(db);
+  const locks = createKeyedMutex();
+
+  // Trade notices go out in the order they happened, even when a token lookup is slow.
+  let notices: Promise<void> = Promise.resolve();
+  const notice = (render: () => Promise<string>) => {
+    notices = notices
+      .then(async () => {
+        notifier.notify(await render());
+      })
+      .catch((error: unknown) => {
+        logger.error({ err: error }, 'Trading notification failed');
+      });
+  };
+  const tokenOf = (position: PositionRow) =>
+    resolveTokenLabel(position.tokenMint, position.tokenDecimals);
+  const events: TradingEvents = {
+    tradeExecuted: ({ fill, position, walletEvent, reason, realizedPnlLamports }) => {
+      notice(async () =>
+        formatTradeExecuted({
+          fill,
+          token: await tokenOf(position),
+          wallet: walletById(position.trackedWalletId) ?? null,
+          walletEvent,
+          reason,
+          realizedPnlLamports,
+          tokenDecimals: position.tokenDecimals,
+          timeZone,
+          mode: executor.mode,
+        }),
+      );
+    },
+    positionClosed: ({ position, reason }) => {
+      notice(async () =>
+        formatPositionClosed({ position, reason, token: await tokenOf(position) }),
+      );
+    },
+    executionError: ({ tokenMint, side, message }) => {
+      notice(async () => {
+        const stored = await findToken(db, tokenMint).catch(() => undefined);
+        const token: TokenLabel = { symbol: stored?.symbol ?? null, name: stored?.name ?? null };
+        return formatExecutionError({
+          tokenMint,
+          side,
+          message: scrub(message),
+          token,
+          mode: executor.mode,
+        });
+      });
+    },
+  };
+
+  const engine = createEngine({
+    store: tradingStore,
+    executor,
+    jupiter,
+    locks,
+    limits: config.risk,
+    displayTimeZone: timeZone,
+    now,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    events,
+    logger,
+  });
+  const monitor = createPositionMonitor({
+    store: tradingStore,
+    executor,
+    locks,
+    limits: config.risk,
+    priorityFeeLamports: config.risk.maxPriorityFeeLamports,
+    now,
+    events,
+    logger,
+  });
+  const reports = createReportJob({
+    source: {
+      trades: (from, to) => listReportTrades(db, executor.mode, from, to),
+      buySignals: (from, to) => listReportBuySignals(db, executor.mode, from, to),
+      closedPositions: (from, to) => listClosedReportPositions(db, executor.mode, from, to),
+      openForSummary: async () =>
+        (await tradingStore.listOpenPositions(executor.mode)).map((position) => {
+          const valuation = monitor.valuation(position.id);
+          return {
+            remainingCostLamports:
+              valuation?.remainingCostLamports ?? remainingCostLamports(positionState(position)),
+            netValueLamports: valuation?.netValueLamports ?? null,
+            pendingFeesLamports: pendingBuyFeesLamports(position),
+          };
+        }),
+    },
+    store: tradingStore,
+    async send(messages) {
+      for (const message of messages) {
+        if ((await notifier.send(message)).length === 0) {
+          throw new Error('Report was not delivered to any chat');
+        }
+      }
+    },
+    timeZone,
+    now,
+    logger,
+  });
+
   const bot = createTelegramBot({
     token: config.telegram.botToken,
     allowedChatIds: config.telegram.allowedChatIds,
@@ -111,16 +248,17 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
       logger,
     },
     trading: {
-      mode: trading.mode,
+      mode: executor.mode,
       store: tradingStore,
-      // Replaced by the position monitor and the report job when paper trading is wired in.
-      monitor: { valuation: () => undefined },
+      monitor,
       resolveTokenLabel,
-      walletLabel: (id) => (id === null ? null : (registry.findById(id)?.label ?? null)),
-      loadReport: () => Promise.resolve(['Laporan belum tersedia.']),
-      notifyOthers: (html, excludeChatId) => notifier.notify(html, { excludeChatId }),
-      timeZone: config.displayTimeZone,
-      now: () => new Date(),
+      walletLabel: (id) => walletById(id)?.label ?? null,
+      loadReport: (kind) => reports.render(kind),
+      notifyOthers: (html, excludeChatId) => {
+        notifier.notify(html, { excludeChatId });
+      },
+      timeZone,
+      now,
     },
     logger,
   });
@@ -130,22 +268,39 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
     logger,
   });
 
-  // Alerts go out in the order swaps were stored, even when a metadata lookup is slow.
+  // Alerts go out in the order swaps were stored, even when a metadata lookup is slow. The engine
+  // decides alongside; its decision is appended to the alert by editing it. Message ids live in
+  // memory only: after a restart in between, the line is lost but the signal is still stored.
   let alerts: Promise<void> = Promise.resolve();
+  const decisions = new Set<Promise<void>>();
   const ingest = createIngestor({
     registry,
     saveSwapEvent: (event, raw) => insertSwapEvent(db, event, raw),
-    onNewSwap: (event, wallet) => {
-      alerts = alerts
-        .then(async () => {
-          const token = await resolveTokenLabel(event.tokenMint, event.tokenDecimals);
-          notifier.notify(
-            formatSwapAlert({ event, wallet, token, timeZone: config.displayTimeZone }),
-          );
+    onNewSwap: (event, wallet, context) => {
+      const alert = alerts.then(async () => {
+        const token = await resolveTokenLabel(event.tokenMint, event.tokenDecimals);
+        const html = formatSwapAlert({ event, wallet, token, timeZone });
+        return { html, sent: notifier.send(html) };
+      });
+      alerts = alert.then(
+        () => undefined,
+        (error: unknown) => {
+          logger.error({ err: error, signature: event.signature }, 'Swap alert failed');
+        },
+      );
+      const decision: Promise<void> = Promise.all([
+        alert,
+        engine.handleSwap(event, wallet, context),
+      ])
+        .then(async ([{ html, sent }, outcome]) => {
+          const line = formatDecisionLine(outcome, timeZone, executor.mode);
+          await notifier.edit(await sent, `${html}\n${line}`);
         })
         .catch((error: unknown) => {
-          logger.error({ err: error, signature: event.signature }, 'Swap alert failed');
-        });
+          logger.error({ err: error, signature: event.signature }, 'Signal handling failed');
+        })
+        .finally(() => decisions.delete(decision));
+      decisions.add(decision);
     },
     logger,
   });
@@ -158,6 +313,8 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
   await walletSync.syncNow();
   await source.start();
   walletSync.start();
+  monitor.start();
+  reports.start();
 
   await bot.api.setMyCommands(BOT_COMMANDS).catch((error: unknown) => {
     logger.warn({ err: error }, 'Could not register Telegram commands');
@@ -190,7 +347,7 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
       fallbackReasons: trading.fallbackReasons,
       ingestSource: config.ingest.source,
       walletCount: registry.size,
-      paused: await isTradingPaused(db),
+      paused: await tradingStore.isTradingPaused(),
     }),
   );
 
@@ -199,7 +356,10 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
     clearInterval(healthcheck);
     walletSync.stop();
     await source.stop();
+    await Promise.all([monitor.stop(), reports.stop()]);
+    await Promise.all(decisions);
     await alerts;
+    await notices;
     notifier.notify('⏹ Solaryna berhenti.');
     await notifier.flush();
     await bot.stop();
