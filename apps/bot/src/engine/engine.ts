@@ -209,7 +209,11 @@ export function createEngine(deps: EngineDeps): Engine {
       let prepared: PrepareResult;
       try {
         prepared = await executor.prepareBuy(
-          { tokenMint: token, solAmountLamports: limits.maxSolPerTradeLamports },
+          {
+            tokenMint: token,
+            solAmountLamports: limits.maxSolPerTradeLamports,
+            slippageBps: limits.maxSlippageBps,
+          },
           'buy',
           { expiresAt },
         );
@@ -294,10 +298,10 @@ export function createEngine(deps: EngineDeps): Engine {
   }
 
   /** Quotes a follow-sell, retrying transient errors; the wallet may be dumping. */
-  async function prepareFollowSell(tokenMint: string, tokenAmountRaw: bigint) {
+  async function prepareFollowSell(tokenMint: string, tokenAmountRaw: bigint, slippageBps: number) {
     for (let attempt = 1; ; attempt++) {
       try {
-        return await executor.prepareSell({ tokenMint, tokenAmountRaw }, 'exit');
+        return await executor.prepareSell({ tokenMint, tokenAmountRaw, slippageBps }, 'exit');
       } catch (error) {
         if (attempt >= FOLLOW_SELL_QUOTE_ATTEMPTS) {
           throw error;
@@ -351,7 +355,7 @@ export function createEngine(deps: EngineDeps): Engine {
       }
       let prepared: PrepareResult;
       try {
-        prepared = await prepareFollowSell(token, amount);
+        prepared = await prepareFollowSell(token, amount, limits.maxSlippageBps);
       } catch (error) {
         const message = errorText(error);
         await reject(

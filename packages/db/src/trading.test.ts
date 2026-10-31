@@ -362,6 +362,42 @@ describe.skipIf(TEST_DATABASE_URL === undefined)('trading queries (MySQL)', () =
     ).toBe(false);
   });
 
+  it('drops the valuation when a sale changes the amount it was quoted for', async () => {
+    const { positionId } = await openTestPosition();
+    const at = new Date('2026-10-31T03:05:00.000Z');
+    await savePositionValuation(db, {
+      positionId,
+      tokenAmountRaw: 1_000_000n,
+      netValueLamports: 61_000_000n,
+      at,
+    });
+    await recordSell(db, {
+      signal: null,
+      positionId,
+      trade: buyTrade({
+        side: 'sell',
+        reason: 'follow_sell',
+        tokenAmountRaw: 500_000n,
+        solAmountLamports: 30_000_000n,
+        executedAt: new Date('2026-10-31T03:06:00.000Z'),
+      }),
+      position: {
+        tokenAmountRaw: 500_000n,
+        proceedsLamports: 30_000_000n,
+        feesLamports: 410_000n,
+        realizedPnlLamports: 4_590_000n,
+        status: 'open',
+        closeReason: null,
+        closedAt: null,
+      },
+    });
+    expect(await getPosition(db, positionId)).toMatchObject({
+      tokenAmountRaw: 500_000n,
+      lastValueLamports: null,
+      lastValuedAt: null,
+    });
+  });
+
   it('stores runtime limit overrides and audits only real changes', async () => {
     expect(await getRiskLimitOverrides(db)).toBeNull();
     const actor = { actor: 'dashboard' };

@@ -102,6 +102,41 @@ describe('parseLimitsForm', () => {
     });
   });
 
+  it('rejects numbers written with thousands separators instead of misreading them', () => {
+    const error = 'Tulis tanpa pemisah ribuan, mis. 20000 atau 0,5.';
+    expect(
+      parseLimitsForm(
+        form({
+          maxHoldMinutes: '1.000',
+          minLiquidityUsd: '25.000',
+          takeProfitPct: '1.000',
+          maxSlippageBps: '1,000',
+        }),
+        {
+          ...CEILINGS,
+          maxHoldMinutes: 1440,
+          maxSlippageBps: 2000,
+          takeProfitPct: new Decimal(2000),
+        },
+      ),
+    ).toEqual({
+      ok: false,
+      errors: {
+        maxHoldMinutes: error,
+        minLiquidityUsd: error,
+        takeProfitPct: error,
+        maxSlippageBps: error,
+      },
+    });
+  });
+
+  it('still reads decimals with three digits after a leading zero', () => {
+    expect(parseLimitsForm(form({ dailyLossLimitLamports: '0.100' }), CEILINGS)).toEqual({
+      ok: true,
+      overrides: { dailyLossLimitLamports: '100000000' },
+    });
+  });
+
   it('keeps the stop-loss between 0 and 100', () => {
     expect(parseLimitsForm(form({ stopLossPct: '150' }), CEILINGS)).toEqual({
       ok: false,

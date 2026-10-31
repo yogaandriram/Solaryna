@@ -135,7 +135,6 @@ async function run(config: BotConfig, logger: Logger): Promise<() => Promise<voi
   });
   const executor = createPaperExecutor({
     jupiter,
-    slippageBps: config.risk.maxSlippageBps,
     priorityFeeLamports: config.risk.maxPriorityFeeLamports,
     now,
   });

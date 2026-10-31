@@ -77,7 +77,6 @@ function setup(options: { limits?: Partial<RiskLimits>; market?: Partial<TokenMa
   });
   const executor = createPaperExecutor({
     jupiter: { getOrder },
-    slippageBps: 300,
     priorityFeeLamports: 200_000n,
     now,
   });
@@ -257,6 +256,17 @@ describe('engine: buy signals', () => {
     const second = await engine.handleSwap(...swap(WALLET_B, 'buy', { tokenMint: MINT_B }));
     expect(codes(second)).toEqual(['max_open_positions']);
     expect(store.positions).toHaveLength(1);
+  });
+
+  it('quotes buys and follow-sells with the runtime slippage limit', async () => {
+    const { engine, swap, getOrder, setLimits } = setup();
+    setLimits({ maxSlippageBps: 120 });
+    await engine.handleSwap(...swap(WALLET_A, 'buy', { tokenMint: MINT_A }));
+    setLimits({ maxSlippageBps: 80 });
+    await engine.handleSwap(
+      ...swap(WALLET_A, 'sell', { tokenMint: MINT_A, tokenAmountRaw: 250n }, 1000n),
+    );
+    expect(getOrder.mock.calls.map(([params]) => params.slippageBps)).toEqual([120, 80]);
   });
 
   it('rejects a stale signal before the delay, after the delay, or while queued', async () => {

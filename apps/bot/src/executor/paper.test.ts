@@ -29,7 +29,6 @@ function setup(order: JupiterOrder | null) {
   const times = [QUOTED_AT, EXECUTED_AT];
   const executor = createPaperExecutor({
     jupiter: { getOrder },
-    slippageBps: 300,
     priorityFeeLamports: 200_000n,
     now: () => times.shift() ?? EXECUTED_AT,
   });
@@ -40,7 +39,7 @@ describe('createPaperExecutor', () => {
   it('quotes a buy of SOL for the token and fills at outAmount', async () => {
     const { executor, getOrder } = setup(quote());
     const prepared = await executor.prepareBuy(
-      { tokenMint: MINT, solAmountLamports: 50_000_000n },
+      { tokenMint: MINT, solAmountLamports: 50_000_000n, slippageBps: 300 },
       'buy',
     );
     expect(getOrder).toHaveBeenCalledWith(
@@ -83,7 +82,7 @@ describe('createPaperExecutor', () => {
     });
     const { executor, getOrder } = setup(sellQuote);
     const prepared = await executor.prepareSell(
-      { tokenMint: MINT, tokenAmountRaw: 1_000_000n },
+      { tokenMint: MINT, tokenAmountRaw: 1_000_000n, slippageBps: 300 },
       'exit',
       undefined,
     );
@@ -108,21 +107,26 @@ describe('createPaperExecutor', () => {
 
   it('passes the signal expiry to the quote request', async () => {
     const { executor, getOrder } = setup(quote());
-    await executor.prepareBuy({ tokenMint: MINT, solAmountLamports: 1n }, 'buy', { expiresAt: 42 });
+    await executor.prepareBuy({ tokenMint: MINT, solAmountLamports: 1n, slippageBps: 300 }, 'buy', {
+      expiresAt: 42,
+    });
     expect(getOrder.mock.calls[0]?.[2]).toEqual({ expiresAt: 42 });
   });
 
   it('reports no_route when Jupiter has no route', async () => {
     const { executor } = setup(null);
     expect(
-      await executor.prepareBuy({ tokenMint: MINT, solAmountLamports: 50_000_000n }, 'buy'),
+      await executor.prepareBuy(
+        { tokenMint: MINT, solAmountLamports: 50_000_000n, slippageBps: 300 },
+        'buy',
+      ),
     ).toEqual({ ok: false, reason: 'no_route' });
   });
 
   it('records no SOL/USD price or DEX fee when the quote lacks them', async () => {
     const { executor } = setup(quote({ inUsdValue: null, platformFee: null }));
     const prepared = await executor.prepareBuy(
-      { tokenMint: MINT, solAmountLamports: 50_000_000n },
+      { tokenMint: MINT, solAmountLamports: 50_000_000n, slippageBps: 300 },
       'buy',
       undefined,
     );

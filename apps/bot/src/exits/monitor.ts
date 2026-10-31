@@ -69,10 +69,10 @@ export function createPositionMonitor(deps: PositionMonitorDeps): PositionMonito
   let running: Promise<void> | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
 
-  async function quote(position: PositionRow): Promise<Quote> {
+  async function quote(position: PositionRow, slippageBps: number): Promise<Quote> {
     try {
       const prepared = await executor.prepareSell(
-        { tokenMint: position.tokenMint, tokenAmountRaw: position.tokenAmountRaw },
+        { tokenMint: position.tokenMint, tokenAmountRaw: position.tokenAmountRaw, slippageBps },
         'monitor',
       );
       return { position, prepared };
@@ -194,7 +194,9 @@ export function createPositionMonitor(deps: PositionMonitorDeps): PositionMonito
         }
       }
     }
-    const quotes = await Promise.all(open.map(quote));
+    const quotes = await Promise.all(
+      open.map((position) => quote(position, limits.maxSlippageBps)),
+    );
     for (const quoted of quotes) {
       try {
         await deps.locks.run(quoted.position.tokenMint, () => check(quoted, limits));

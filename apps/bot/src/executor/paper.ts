@@ -4,7 +4,6 @@ import type { Executor, PreparedOrder, PrepareResult, TradeFill } from './types'
 
 export interface PaperExecutorOptions {
   jupiter: Pick<JupiterClient, 'getOrder'>;
-  slippageBps: number;
   /** Charged per simulated transaction (the configured maximum, to stay conservative). */
   priorityFeeLamports: bigint;
   now: () => Date;
@@ -20,6 +19,7 @@ export function createPaperExecutor(options: PaperExecutorOptions): Executor {
     side: 'buy' | 'sell',
     tokenMint: string,
     amountRaw: bigint,
+    slippageBps: number,
     priority: Parameters<Executor['prepareBuy']>[1],
     scheduleOptions: Parameters<Executor['prepareBuy']>[2],
   ): Promise<PrepareResult> {
@@ -28,7 +28,7 @@ export function createPaperExecutor(options: PaperExecutorOptions): Executor {
         inputMint: side === 'buy' ? WSOL_MINT : tokenMint,
         outputMint: side === 'buy' ? tokenMint : WSOL_MINT,
         amountRaw,
-        slippageBps: options.slippageBps,
+        slippageBps,
       },
       priority,
       scheduleOptions,
@@ -51,9 +51,23 @@ export function createPaperExecutor(options: PaperExecutorOptions): Executor {
   return {
     mode: 'paper',
     prepareBuy: (params, priority, scheduleOptions) =>
-      prepare('buy', params.tokenMint, params.solAmountLamports, priority, scheduleOptions),
+      prepare(
+        'buy',
+        params.tokenMint,
+        params.solAmountLamports,
+        params.slippageBps,
+        priority,
+        scheduleOptions,
+      ),
     prepareSell: (params, priority, scheduleOptions) =>
-      prepare('sell', params.tokenMint, params.tokenAmountRaw, priority, scheduleOptions),
+      prepare(
+        'sell',
+        params.tokenMint,
+        params.tokenAmountRaw,
+        params.slippageBps,
+        priority,
+        scheduleOptions,
+      ),
     execute(order) {
       const buy = order.side === 'buy';
       const solAmount = buy ? order.inAmountRaw : order.outAmountRaw;

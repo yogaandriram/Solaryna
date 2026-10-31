@@ -32,48 +32,53 @@ export function SignalsTable({
           </tr>
         </thead>
         <tbody>
-          {items.map((signal) => (
-            <tr key={signal.id} className="border-t border-line">
-              <td className={`${TD} whitespace-nowrap text-muted tabular-nums`}>
-                <a
-                  href={`https://solscan.io/tx/${signal.signature}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:underline"
-                  title="Lihat transaksi wallet di Solscan"
+          {items.map((signal) => {
+            const reasons =
+              signal.reasons.length === 0
+                ? null
+                : signal.reasons.map((reason) => describeRiskReason(reason, timeZone)).join('; ');
+            return (
+              <tr key={signal.id} className="border-t border-line">
+                <td className={`${TD} whitespace-nowrap text-muted tabular-nums`}>
+                  <a
+                    href={`https://solscan.io/tx/${signal.signature}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:underline"
+                    title="Lihat transaksi wallet di Solscan"
+                  >
+                    {formatDateTime(signal.createdAt, timeZone)}
+                  </a>
+                </td>
+                <td className={`${TD} hidden whitespace-nowrap sm:table-cell`}>
+                  <Link
+                    href={withParams(`/wallets/${signal.walletId}`, modeParam)}
+                    className="hover:underline"
+                  >
+                    {walletName(signal.walletLabel, signal.walletAddress)}
+                  </Link>
+                </td>
+                <td className={`${TD} whitespace-nowrap`}>
+                  <SideBadge side={signal.side} />{' '}
+                  <span className="font-medium">
+                    {tokenLabel(signal.tokenSymbol, signal.tokenMint)}
+                  </span>
+                </td>
+                <td
+                  className={`${TD} hidden text-right whitespace-nowrap tabular-nums md:table-cell`}
                 >
-                  {formatDateTime(signal.createdAt, timeZone)}
-                </a>
-              </td>
-              <td className={`${TD} hidden whitespace-nowrap sm:table-cell`}>
-                <Link
-                  href={withParams(`/wallets/${signal.walletId}`, modeParam)}
-                  className="hover:underline"
-                >
-                  {walletName(signal.walletLabel, signal.walletAddress)}
-                </Link>
-              </td>
-              <td className={`${TD} whitespace-nowrap`}>
-                <SideBadge side={signal.side} />{' '}
-                <span className="font-medium">
-                  {tokenLabel(signal.tokenSymbol, signal.tokenMint)}
-                </span>
-              </td>
-              <td
-                className={`${TD} hidden text-right whitespace-nowrap tabular-nums md:table-cell`}
-              >
-                {formatQuoteAmount(signal.quoteAmountRaw, signal.quoteDecimals, signal.quoteMint)}
-              </td>
-              <td className={`${TD} whitespace-nowrap`}>
-                <DecisionBadge decision={signal.decision} />
-              </td>
-              <td className={`${TD} hidden text-muted lg:table-cell`}>
-                {signal.reasons.length === 0
-                  ? '—'
-                  : signal.reasons.map((reason) => describeRiskReason(reason, timeZone)).join('; ')}
-              </td>
-            </tr>
-          ))}
+                  {formatQuoteAmount(signal.quoteAmountRaw, signal.quoteDecimals, signal.quoteMint)}
+                </td>
+                <td className={TD}>
+                  <DecisionBadge decision={signal.decision} />
+                  {reasons !== null && (
+                    <p className="mt-1 min-w-40 text-xs text-muted lg:hidden">{reasons}</p>
+                  )}
+                </td>
+                <td className={`${TD} hidden text-muted lg:table-cell`}>{reasons ?? '—'}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

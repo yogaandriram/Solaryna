@@ -197,9 +197,15 @@ export async function recordSell(
     if (trade === undefined) {
       throw new Error('Insert into trades returned no id');
     }
+    // The stored valuation was quoted for the old amount; the monitor values the rest next tick.
     await tx
       .update(positions)
-      .set({ ...input.position, updatedAt: new Date() })
+      .set({
+        ...input.position,
+        lastValueLamports: null,
+        lastValuedAt: null,
+        updatedAt: new Date(),
+      })
       .where(eq(positions.id, input.positionId));
     return { signalId, tradeId: trade.id };
   });

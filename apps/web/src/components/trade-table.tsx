@@ -47,8 +47,8 @@ export function TradeTable({
             <th className={`${TH} hidden text-right xl:table-cell`}>Jumlah token</th>
             <th className={`${TH} text-right`}>SOL</th>
             <th className={`${TH} hidden text-right xl:table-cell`}>Harga</th>
-            <th className={`${TH} hidden text-right md:table-cell`}>Fee jaringan</th>
-            <th className={`${TH} hidden text-right md:table-cell`}>Priority fee</th>
+            <th className={`${TH} hidden text-right lg:table-cell`}>Fee jaringan</th>
+            <th className={`${TH} hidden text-right lg:table-cell`}>Priority fee</th>
             <th className={`${TH} hidden text-right lg:table-cell`}>Fee DEX</th>
             <th className={`${TH} hidden text-right xl:table-cell`}>Slippage</th>
             <th className={`${TH} text-right`}>PnL terealisasi</th>
@@ -79,6 +79,10 @@ export function TradeTable({
                     ({STATUS_LABELS[trade.status]})
                   </span>
                 )}
+                <p className="mt-1 min-w-44 text-xs text-muted lg:hidden">
+                  Fee jaringan {formatSol(trade.networkFeeLamports)} · priority{' '}
+                  {formatSol(trade.priorityFeeLamports)} · DEX {formatSol(trade.dexFeeLamports)}
+                </p>
               </td>
               <td className={`${TD} hidden text-right xl:table-cell`}>
                 {formatTokenAmount(trade.tokenAmountRaw, trade.tokenDecimals)}
@@ -87,10 +91,10 @@ export function TradeTable({
               <td className={`${TD} hidden text-right text-muted xl:table-cell`}>
                 {formatPriceSol(trade.priceSol)}
               </td>
-              <td className={`${TD} hidden text-right text-muted md:table-cell`}>
+              <td className={`${TD} hidden text-right text-muted lg:table-cell`}>
                 {formatSol(trade.networkFeeLamports)}
               </td>
-              <td className={`${TD} hidden text-right text-muted md:table-cell`}>
+              <td className={`${TD} hidden text-right text-muted lg:table-cell`}>
                 {formatSol(trade.priorityFeeLamports)}
               </td>
               <td className={`${TD} hidden text-right text-muted lg:table-cell`}>

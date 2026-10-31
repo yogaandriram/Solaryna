@@ -48,12 +48,18 @@ export type ParsedLimitsForm =
   { ok: true; overrides: SerializedRiskLimitOverrides } | { ok: false; errors: LimitErrors };
 
 const NUMBER = /^-?\d+(\.\d+)?$/;
+// "1.000" / "20,000": the page shows numbers with Indonesian thousands dots, so typing one back
+// would otherwise be read as a decimal 1000x too small. A leading zero ("0.100") is a decimal.
+const THOUSANDS = /^[1-9]\d{0,2}(\.\d{3})+$/;
 
 type Parsed = { ok: true; value: RuntimeLimits[RuntimeLimitKey] } | { ok: false; error: string };
 
 const fail = (error: string): Parsed => ({ ok: false, error });
 
 function parseField(key: RuntimeLimitKey, text: string): Parsed {
+  if (THOUSANDS.test(text)) {
+    return fail('Tulis tanpa pemisah ribuan, mis. 20000 atau 0,5.');
+  }
   if (!NUMBER.test(text)) {
     return fail('Harus angka.');
   }

@@ -53,7 +53,10 @@ function position(id: number, tokenMint: string): PositionRow {
   };
 }
 
-function setup(sellOut: (mint: string) => bigint | null | Error) {
+function setup(
+  sellOut: (mint: string) => bigint | null | Error,
+  currentLimits: () => RiskLimits = () => limits,
+) {
   let time = OPENED_AT.getTime() + 10 * 60_000;
   const now = () => new Date(time);
   const store = createFakeTradingStore();
@@ -89,12 +92,11 @@ function setup(sellOut: (mint: string) => bigint | null | Error) {
     store,
     executor: createPaperExecutor({
       jupiter: { getOrder },
-      slippageBps: 300,
       priorityFeeLamports: 200_000n,
       now,
     }),
     locks,
-    limits: () => limits,
+    limits: currentLimits,
     priorityFeeLamports: 200_000n,
     now,
     events,
@@ -137,6 +139,21 @@ describe('createPositionMonitor', () => {
       expect.objectContaining({ reason: 'take_profit' }),
     );
     expect(monitor.valuation(1)).toBeUndefined();
+  });
+
+  it('reads the runtime limits every cycle, for the quote and the thresholds', async () => {
+    let current: RiskLimits = { ...limits, maxSlippageBps: 150 };
+    const { monitor, store, getOrder } = setup(
+      () => 60_000_000n,
+      () => current,
+    );
+    store.positions.push(position(1, MINT_A));
+    await monitor.runOnce();
+    expect(store.positions[0]?.status).toBe('open');
+    current = { ...limits, maxSlippageBps: 90, takeProfitPct: new Decimal(10) };
+    await monitor.runOnce();
+    expect(getOrder.mock.calls.map(([params]) => params.slippageBps)).toEqual([150, 90]);
+    expect(store.positions[0]).toMatchObject({ status: 'closed', closeReason: 'take_profit' });
   });
 
   it('keeps a position between the thresholds and remembers its valuation', async () => {

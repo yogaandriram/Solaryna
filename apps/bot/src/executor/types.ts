@@ -36,17 +36,18 @@ export interface TradeFill {
 
 /**
  * Two steps so the risk engine judges exactly the quote that gets executed. Paper fills at the
- * quote; live (M5) signs, sends and reads the confirmed amounts.
+ * quote; live (M5) signs, sends and reads the confirmed amounts. The slippage tolerance comes with
+ * each order because it is a runtime risk limit.
  */
 export interface Executor {
   readonly mode: TradingMode;
   prepareBuy(
-    params: { tokenMint: string; solAmountLamports: bigint },
+    params: { tokenMint: string; solAmountLamports: bigint; slippageBps: number },
     priority: RequestPriority,
     options?: ScheduleOptions,
   ): Promise<PrepareResult>;
   prepareSell(
-    params: { tokenMint: string; tokenAmountRaw: bigint },
+    params: { tokenMint: string; tokenAmountRaw: bigint; slippageBps: number },
     priority: RequestPriority,
     options?: ScheduleOptions,
   ): Promise<PrepareResult>;
